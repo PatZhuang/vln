@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always" serverName="ins502" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true">
+    <serverData>
+      <paths name="ins502">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/root/dev/vln-sep" local="$PROJECT_DIR$" />
+            <mapping deploy="/root/dev/vln-sep/r2r_src" local="$PROJECT_DIR$/r2r_src" />
+            <mapping deploy="/root/dev/vln-sep/run" local="$PROJECT_DIR$/run" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
+  </component>
+</project>
