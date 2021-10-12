@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent
+name=VLNBERT-train-Prevalent-newsim
 
 flag="--vlnbert prevalent
 
@@ -22,4 +22,4 @@ flag="--vlnbert prevalent
       --dropout 0.5"
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name

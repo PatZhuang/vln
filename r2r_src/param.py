@@ -14,6 +14,7 @@ class Param:
         self.parser.add_argument('--vlnbert', type=str, default='oscar', help='oscar or prevalent')
         self.parser.add_argument('--train', type=str, default='listener')
         self.parser.add_argument('--description', type=str, default='no description\n')
+        self.parser.add_argument("--apex", action="store_const", default=False, const=True)
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
@@ -22,6 +23,9 @@ class Param:
         self.parser.add_argument('--ignoreid', type=int, default=-100)
         self.parser.add_argument('--feature_size', type=int, default=2048)
         self.parser.add_argument("--loadOptim",action="store_const", default=False, const=True)
+        self.parser.add_argument("--patchVis", action="store_const", default=False, const=True)
+        self.parser.add_argument('--top_N_obj', type=int, default=8)
+        self.parser.add_argument("--nerf_encoding", action="store_const", default=False, const=True)
 
         # Load the model from
         self.parser.add_argument("--load", default=None, help='path of the trained model')

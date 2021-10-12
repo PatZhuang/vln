@@ -244,8 +244,8 @@ class BertOutAttention(nn.Module):
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         # dynamic temperature
-        self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
-        self.temp_act = nn.GELU()
+        # self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
+        # self.temp_act = nn.ReLU()
 
         # visual_dim = 2048
         if ctx_dim is None:
@@ -275,8 +275,8 @@ class BertOutAttention(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # dynamic temperature
-        dy_t = self.temp_act(self.temp_fc(query_layer))
-        attention_scores = attention_scores * dy_t
+        # dy_t = self.temp_act(self.temp_fc(query_layer))
+        # attention_scores = attention_scores * dy_t
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         if attention_mask is not None:
@@ -386,11 +386,14 @@ class VLNBert(BertPreTrainedModel):
             [BertLayer(config) for _ in range(self.la_layers)])
         self.addlayer = nn.ModuleList(
             [LXRTXLayer(config) for _ in range(self.vl_layers)])
+        self.objlayer = nn.ModuleList([BertLayer(config) for _ in range(3)])
+        self.ollayer = nn.ModuleList([LXRTXLayer(config) for _ in range(3)])
         self.vision_encoder = VisionEncoder(self.config.img_feature_dim, self.config)
         self.init_weights()
 
     def forward(self, mode, input_ids, token_type_ids=None,
-        attention_mask=None, lang_mask=None, vis_mask=None, position_ids=None, head_mask=None, img_feats=None):
+        attention_mask=None, lang_mask=None, vis_mask=None, position_ids=None, head_mask=None, img_feats=None,
+                cand_mask=None, obj_feat=None, obj_pos_encoding=None):
 
         attention_mask = lang_mask
 
@@ -417,6 +420,45 @@ class VLNBert(BertPreTrainedModel):
             pooled_output = self.pooler(sequence_output)
 
             return pooled_output, sequence_output
+
+        if mode == 'object':
+            obj_feat_shape = obj_feat.shape
+            obj_feat = obj_feat.view(obj_feat_shape[0], -1) # (bs, max_cand_len * top_N_obj)
+            obj_embeds = self.embeddings(obj_feat, position_ids=torch.zeros_like(obj_feat))  # (bs, max_cand_len * top_N_obj, hidden_size)
+            obj_pos_encoding = obj_pos_encoding.view(obj_embeds.shape)
+            obj_pos_encoding[obj_embeds == 0] = 0    # to correspond to dropout of obj_embedding
+            obj_embeds = obj_embeds + obj_pos_encoding
+
+            obj_mask = cand_mask.repeat_interleave(obj_feat_shape[-1], 1)
+            obj_mask = obj_mask.unsqueeze(1).unsqueeze(2)
+            obj_mask = obj_mask.to(dtype=next(self.parameters()).dtype)
+            obj_mask = obj_mask * -10000.0
+
+            # for layer_module in self.lalayer:
+            #     temp_output = layer_module(obj_embeds, obj_mask)
+            #     obj_embeds = temp_output[0]
+
+            obj_output = obj_embeds
+            lang_output = input_ids
+
+            text_mask = lang_mask
+            text_mask = text_mask.unsqueeze(1).unsqueeze(2)
+            text_mask = text_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
+            text_mask = text_mask * -10000.0
+
+            # output shape: (bs, max_cand * top_N_obj, hidden_size)
+            # language_attention_scores shape: (bs, num_attention_head, maxInput - 1)
+            # obj_attention_scores shape: (bs, num_attention_head, max_cand_len * top_N_obj)
+            for tdx, layer_module in enumerate(self.ollayer):
+                lang_output, obj_output, language_attention_scores, obj_attention_scores = layer_module(
+                    lang_output, text_mask, obj_output, obj_mask, tdx
+                )
+
+            obj_action_scores = obj_attention_scores.view(obj_feat_shape[0], -1, obj_feat_shape[1], obj_feat_shape[2])
+            # mean for multi-heads then mean for multi-objects
+            obj_action_scores = obj_action_scores.mean(dim=1).mean(dim=-1)  # (bs, max_cand_len)
+
+            return obj_action_scores
 
         elif mode == 'visual':
             ''' LXMERT visual branch (no language processing during navigation) '''

@@ -3,7 +3,7 @@
 import os
 import sys
 import re
-sys.path.append('Matterport_Simulator/build/')
+sys.path.append('Matterport_Simulator/build_new/')
 import MatterSim
 import string
 import json
@@ -13,7 +13,17 @@ from collections import Counter, defaultdict
 import numpy as np
 import networkx as nx
 from param import args
+import torchvision
+import cv2
 from numpy.linalg import norm
+from tqdm import tqdm
+from turbojpeg import TurboJPEG
+from multiprocessing import Pool, Manager
+from functools import wraps
+
+if args.patchVis:
+    sys.path.append('../deit')
+    from deit.datasets import build_transform
 
 
 # padding, unknown word, end of sentence
@@ -271,12 +281,48 @@ def read_img_features(feature_store, test_only=False):
             reader = csv.DictReader(tsv_in_file, delimiter='\t', fieldnames=tsv_fieldnames)
             for item in reader:
                 long_id = item['scanId'] + "_" + item['viewpointId']
-                features[long_id] = np.frombuffer(base64.decodestring(item['features'].encode('ascii')),
-                                                   dtype=np.float32).reshape((views, -1))   # Feature of long_id is (36, 2048)
+                features[long_id] = np.frombuffer(base64.b64decode(item['features']), dtype=np.float32).reshape(
+                    (views, -1))  # Feature of long_id is (36, 2048)
     else:
         features = None
 
     print("Finish Loading the image feature from %s in %0.4f seconds" % (feature_store, time.time() - start))
+    return features
+
+def load_image_from_path(filename):
+    image = torchvision.transforms.functional.to_pil_image(
+        cv2.imread(filename, 1)
+    )
+    return image
+
+def read_img(dir_path, test_only=False):
+    import os
+    print('start loading images')
+    start = time.time()
+
+    features = defaultdict(dict)
+    if not test_only:
+        pool = Pool(36)
+        scanIds = os.listdir(dir_path)
+        filenames = []
+        pbar = tqdm(total=10567*36)
+        jpeg = TurboJPEG()
+        for scanId in scanIds:
+            imgs = os.listdir(os.path.join(dir_path, scanId))
+            for img in imgs:
+                viewpointId, ix = img.split('_')
+                ix = int(ix.split('.')[0])
+                long_id = '_'.join([scanId, viewpointId])
+                filename = os.path.join(dir_path, scanId, img)
+                # res = pool.apply_async(load_image_from_path, (filename, ), callback=lambda _: pbar.update(1))
+                features[long_id][ix] = load_image_from_path(filename)
+            pbar.update(1)
+        pbar.close()
+        pool.close()
+        pool.join()
+    else:
+        features = None
+    print("Finish Loading the images in %0.4f seconds" % (time.time() - start))
     return features
 
 def read_candidates(candidates_store):
@@ -348,7 +394,7 @@ def new_simulator():
     sim.setCameraResolution(WIDTH, HEIGHT)
     sim.setCameraVFOV(math.radians(VFOV))
     sim.setDiscretizedViewingAngles(True)
-    sim.init()
+    sim.initialize()
 
     return sim
 
@@ -359,13 +405,13 @@ def get_point_angle_feature(baseViewId=0):
     base_heading = (baseViewId % 12) * math.radians(30)
     for ix in range(36):
         if ix == 0:
-            sim.newEpisode('ZMojNkEp431', '2f4d90acd4024c269fb0efe49a8ac540', 0, math.radians(-30))
+            sim.newEpisode(['ZMojNkEp431'], ['2f4d90acd4024c269fb0efe49a8ac540'], [0], [math.radians(-30)])
         elif ix % 12 == 0:
-            sim.makeAction(0, 1.0, 1.0)
+            sim.makeAction([0], [1.0], [1.0])
         else:
-            sim.makeAction(0, 1.0, 0)
+            sim.makeAction([0], [1.0], [0])
 
-        state = sim.getState()
+        state = sim.getState()[0]
         assert state.viewIndex == ix
 
         heading = state.heading - base_heading

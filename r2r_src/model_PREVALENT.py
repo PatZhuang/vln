@@ -32,14 +32,36 @@ class VLNBERT(nn.Module):
         self.state_proj = nn.Linear(hidden_size*2, hidden_size, bias=True)
         self.state_LayerNorm = BertLayerNorm(hidden_size, eps=layer_norm_eps)
 
+        # object
+        if args.nerf_encoding:
+            # TODO: add nerf
+            self.obj_pos_proj = nn.Linear(4, hidden_size)
+        else:
+            self.obj_pos_proj = nn.Linear(4, hidden_size)
+        self.cand_pos_proj = nn.Linear(4, hidden_size)
+        self.pos_encoding_ln = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.obj_dropout = nn.Dropout(p=args.featdropout)
+
     def forward(self, mode, sentence, token_type_ids=None,
                 attention_mask=None, lang_mask=None, vis_mask=None,
-                position_ids=None, action_feats=None, pano_feats=None, cand_feats=None):
+                position_ids=None, action_feats=None, pano_feats=None, cand_feats=None,
+                cand_pos=None, cand_mask=None, obj_feat=None, obj_bbox=None):
 
         if mode == 'language':
             init_state, encoded_sentence = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
 
             return init_state, encoded_sentence
+
+        if mode == 'object':
+            # object position in candidate views respectively
+            obj_pos_encoding = self.obj_pos_proj(obj_bbox)  # (bs, max_cand_len, 8, hidden_size)
+            # candidate position relative to current base view
+            cand_pos_encoding = self.cand_pos_proj(cand_pos).unsqueeze(2).repeat(1,1,args.top_N_obj,1)
+            pos_encoding = self.pos_encoding_ln(obj_pos_encoding + cand_pos_encoding)
+
+            obj_action_scores = self.vln_bert(mode, sentence, lang_mask=lang_mask, cand_mask=cand_mask,
+                                             obj_feat=obj_feat.long(), obj_pos_encoding=pos_encoding)
+            return obj_action_scores
 
         elif mode == 'visual':
 

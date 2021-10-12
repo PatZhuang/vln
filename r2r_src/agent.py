@@ -8,6 +8,7 @@ import numpy as np
 import random
 import math
 import time
+from apex import amp
 
 import torch
 import torch.nn as nn
@@ -91,7 +92,7 @@ class Seq2SeqAgent(BaseAgent):
       '<ignore>': (0, 0, 0)  # <ignore>
     }
 
-    def __init__(self, env, results_path, tok, episode_len=20):
+    def __init__(self, env, results_path, tok, episode_len=20, vit_model=None, vit_args=None, img_process=None):
         super(Seq2SeqAgent, self).__init__(env, results_path)
         self.tok = tok
         self.episode_len = episode_len
@@ -104,12 +105,28 @@ class Seq2SeqAgent(BaseAgent):
         elif args.vlnbert == 'prevalent':
             self.vln_bert = model_PREVALENT.VLNBERT(feature_size=self.feature_size + args.angle_feat_size).cuda()
             self.critic = model_PREVALENT.Critic().cuda()
-        self.models = (self.vln_bert, self.critic)
+        self.models = [self.vln_bert, self.critic]
 
         # Optimizers
         self.vln_bert_optimizer = args.optimizer(self.vln_bert.parameters(), lr=args.lr)
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
-        self.optimizers = (self.vln_bert_optimizer, self.critic_optimizer)
+        self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
+
+        # patch vis
+        if args.patchVis:
+            self.vit_args = vit_args
+            self.img_process = img_process
+            self.vit_model = vit_model
+            self.vit_optimizer = args.optimizer(self.vit_model.parameters(), lr=vit_args.lr)
+
+            self.models += [self.vit_model]
+            self.optimizers += [self.vit_optimizer]
+
+            self.env.vit_model = vit_model
+            self.env.img_process = img_process
+
+        if args.apex:
+            self.models, self.optimizers = amp.initialize(self.models, self.optimizers, opt_level='O1')
 
         # Evaluations
         self.losses = []
@@ -143,19 +160,42 @@ class Seq2SeqAgent(BaseAgent):
         ''' Extract precomputed features into variable. '''
         features = np.empty((len(obs), args.views, self.feature_size + args.angle_feat_size), dtype=np.float32)
         for i, ob in enumerate(obs):
-            features[i, :, :] = ob['feature']  # Image feat
+            if args.patchVis:
+                # TODO: check
+                pass
+            else:
+                features[i, :, :] = ob['feature']  # Image feat
         return Variable(torch.from_numpy(features), requires_grad=False).cuda()
 
     def _candidate_variable(self, obs):
         candidate_leng = [len(ob['candidate']) + 1 for ob in obs]  # +1 is for the end
         candidate_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size + args.angle_feat_size), dtype=np.float32)
+        candidate_obj_class = np.zeros((len(obs), max(candidate_leng), args.top_N_obj), dtype=np.float32)
+        candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, 4), dtype=np.float32)
+        candidate_pos = np.zeros((len(obs), max(candidate_leng), 4), dtype=np.float32)
         # Note: The candidate_feat at len(ob['candidate']) is the feature for the END
         # which is zero in my implementation
         for i, ob in enumerate(obs):
             for j, cc in enumerate(ob['candidate']):
-                candidate_feat[i, j, :] = cc['feature']
+                if args.patchVis:
+                    pass
+                else:
+                    candidate_feat[i, j, :] = cc['feature']
+                    candidate_obj_class[i, j, :] = cc['obj_info']['obj_class']
+                    candidate_obj_bbox[i, j, :] = cc['obj_info']['bbox']
+                    candidate_pos[i, j, :] = cc['feature'][-4:] # [sin(heading), cos(heading), sin(elev), cos(elev)]
 
+        return {
+            'candidate_feat': torch.from_numpy(candidate_feat).cuda(),
+            'candidate_leng': candidate_leng,
+            'candidate_obj_class': torch.from_numpy(candidate_obj_class).cuda(),
+            'candidate_obj_bbox' : torch.from_numpy(candidate_obj_bbox).cuda(),
+            'candidate_pos'      : torch.from_numpy(candidate_pos).cuda()
+        }
         return torch.from_numpy(candidate_feat).cuda(), candidate_leng
+
+    def _get_obj_input(self, obs):
+        candidates = [ob['candidate'] for ob in obs]    # (bs, cand_len)
 
     def get_input_feat(self, obs):
         input_a_t = np.zeros((len(obs), args.angle_feat_size), np.float32)
@@ -163,9 +203,23 @@ class Seq2SeqAgent(BaseAgent):
             input_a_t[i] = utils.angle_feature(ob['heading'], ob['elevation'])
         input_a_t = torch.from_numpy(input_a_t).cuda()
         # f_t = self._feature_variable(obs)      # Pano image features from obs
-        candidate_feat, candidate_leng = self._candidate_variable(obs)
+        candidate_variable = self._candidate_variable(obs)
 
-        return input_a_t, candidate_feat, candidate_leng
+        candidate_feat = candidate_variable['candidate_feat']
+        candidate_leng = candidate_variable['candidate_leng']
+        candidate_obj_class = candidate_variable['candidate_obj_class']
+        candidate_obj_bbox  = candidate_variable['candidate_obj_bbox']
+        candidate_pos = candidate_variable['candidate_pos']
+
+        # return input_a_t, candidate_feat, candidate_leng
+        return {
+            'input_a_t': input_a_t,
+            'cand_feat': candidate_feat,
+            'cand_leng': candidate_leng,
+            'cand_pos' : candidate_pos,
+            'obj_feat': candidate_obj_class,
+            'obj_bbox': candidate_obj_bbox,
+        }
 
     def _teacher_action(self, obs, ended):
         """
@@ -193,38 +247,59 @@ class Seq2SeqAgent(BaseAgent):
         Interface between Panoramic view and Egocentric view
         It will convert the action panoramic view action a_t to equivalent egocentric view actions for the simulator
         """
-        def take_action(i, idx, name):
-            if type(name) is int:       # Go to the next view
-                self.env.env.sims[idx].makeAction(name, 0, 0)
-            else:                       # Adjust
-                self.env.env.sims[idx].makeAction(*self.env_actions[name])
-
         if perm_idx is None:
             perm_idx = range(len(perm_obs))
-
+        actions = [[]] * self.env.batch_size  # batch * action_len
+        max_len = 0  # for padding stop action
         for i, idx in enumerate(perm_idx):
             action = a_t[i]
-            if action != -1:            # -1 is the <stop> action
+            if action != -1:  # -1 is the <stop> action
                 select_candidate = perm_obs[i]['candidate'][action]
                 src_point = perm_obs[i]['viewIndex']
                 trg_point = select_candidate['pointId']
-                src_level = (src_point ) // 12  # The point idx started from 0
-                trg_level = (trg_point ) // 12
-                while src_level < trg_level:    # Tune up
-                    take_action(i, idx, 'up')
-                    src_level += 1
-                while src_level > trg_level:    # Tune down
-                    take_action(i, idx, 'down')
-                    src_level -= 1
-                while self.env.env.sims[idx].getState().viewIndex != trg_point:    # Turn right until the target
-                    take_action(i, idx, 'right')
-                assert select_candidate['viewpointId'] == \
-                       self.env.env.sims[idx].getState().navigableLocations[select_candidate['idx']].viewpointId
-                take_action(i, idx, select_candidate['idx'])
+                src_level = (src_point) // 12  # The point idx started from 0
+                trg_level = (trg_point) // 12
+                src_heading = (src_point) % 12
+                trg_heading = (trg_point) % 12
+                # adjust elevation
+                if trg_level > src_level:
+                    actions[idx] = actions[idx] + [self.env_actions['up']] * int(trg_level - src_level)
+                elif trg_level < src_level:
+                    actions[idx] = actions[idx] + [self.env_actions['down']] * int(src_level - trg_level)
+                # adjust heading
+                if trg_heading > src_heading:
+                    dif = trg_heading - src_heading
+                    if dif >= 6:  # turn left
+                        actions[idx] = actions[idx] + [self.env_actions['left']] * int(12 - dif)
+                    else:  # turn right
+                        actions[idx] = actions[idx] + [self.env_actions['right']] * int(dif)
+                elif trg_heading < src_heading:
+                    dif = src_heading - trg_heading
+                    if dif >= 6:  # turn right
+                        actions[idx] = actions[idx] + [self.env_actions['right']] * int(12 - dif)
+                    else:  # turn left
+                        actions[idx] = actions[idx] + [self.env_actions['left']] * int(dif)
 
-                state = self.env.env.sims[idx].getState()
-                if traj is not None:
-                    traj[i]['path'].append((state.location.viewpointId, state.heading, state.elevation))
+                actions[idx] = actions[idx] + [(select_candidate['idx'], 0, 0)]
+                max_len = max(max_len, len(actions[idx]))
+
+        for idx in perm_idx:
+            if len(actions[idx]) < max_len:
+                actions[idx] = actions[idx] + [self.env_actions['<end>']] * (max_len - len(actions[idx]))
+        actions = np.array(actions, dtype='float32')
+
+        for i in range(max_len):
+            cur_actions = actions[:, i]
+            cur_actions = list(cur_actions)
+            cur_actions = [tuple(a) for a in cur_actions]
+            self.env.env.makeActions(cur_actions)
+
+        if traj is not None:
+            state = self.env.env.sims.getState()
+            for i, idx in enumerate(perm_idx):
+                action = a_t[i]
+                if action != -1:
+                    traj[i]['path'].append((state[idx].location.viewpointId, state[idx].heading, state[idx].elevation))
 
     def rollout(self, train_ml=None, train_rl=True, reset=True):
         """
@@ -287,12 +362,32 @@ class Seq2SeqAgent(BaseAgent):
 
         for t in range(self.episode_len):
 
-            input_a_t, candidate_feat, candidate_leng = self.get_input_feat(perm_obs)
+            input_feat = self.get_input_feat(perm_obs)
+            input_a_t = input_feat['input_a_t']
+            candidate_feat = input_feat['cand_feat']
+            candidate_leng = input_feat['cand_leng']
+            candidate_pos  = input_feat['cand_pos']
+            object_feat = input_feat['obj_feat']
+            object_bbox = input_feat['obj_bbox']
 
             # the first [CLS] token, initialized by the language BERT, serves
             # as the agent's state passing through time steps
             if (t >= 1) or (args.vlnbert=='prevalent'):
                 language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
+
+            candidate_mask = utils.length2mask(candidate_leng)
+            '''Object BERT'''
+            object_inputs = {
+                'mode': 'object',
+                'sentence': language_features,
+                'obj_feat': object_feat,
+                'obj_bbox': object_bbox,
+                'cand_pos': candidate_pos,
+                'lang_mask': language_attention_mask,
+                'cand_mask': candidate_mask,
+            }
+
+            obj_action_scores = self.vln_bert(**object_inputs)
 
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
@@ -309,11 +404,13 @@ class Seq2SeqAgent(BaseAgent):
                             # 'pano_feats':         f_t,
                             'cand_feats':         candidate_feat}
             h_t, logit = self.vln_bert(**visual_inputs)
+
+            logit = logit * obj_action_scores
             hidden_states.append(h_t)
 
             # Mask outputs where agent can't move forward
             # Here the logit is [b, max_candidate]
-            candidate_mask = utils.length2mask(candidate_leng)
+
             logit.masked_fill_(candidate_mask, -float('inf'))
 
             # Supervised training
@@ -400,9 +497,29 @@ class Seq2SeqAgent(BaseAgent):
 
         if train_rl:
             # Last action in A2C
-            input_a_t, candidate_feat, candidate_leng = self.get_input_feat(perm_obs)
+            input_feat = self.get_input_feat(perm_obs)
+            input_a_t = input_feat['input_a_t']
+            candidate_feat = input_feat['cand_feat']
+            candidate_leng = input_feat['cand_leng']
+            candidate_pos = input_feat['cand_pos']
+            object_feat = input_feat['obj_feat']
+            object_bbox = input_feat['obj_bbox']
 
             language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
+
+            candidate_mask = utils.length2mask(candidate_leng)
+
+            object_inputs = {
+                'mode': 'object',
+                'sentence': language_features,
+                'obj_feat': object_feat,
+                'obj_bbox': object_bbox,
+                'cand_pos': candidate_pos,
+                'lang_mask': language_attention_mask,
+                'cand_mask': candidate_mask,
+            }
+
+            obj_action_scores = self.vln_bert(**object_inputs)
 
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
@@ -502,19 +619,27 @@ class Seq2SeqAgent(BaseAgent):
             assert False
 
     def optim_step(self):
-        self.loss.backward()
+        if args.apex:
+            with amp.scale_loss(self.loss, self.optimizers) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            self.loss.backward()
 
         torch.nn.utils.clip_grad_norm(self.vln_bert.parameters(), 40.)
 
-        self.vln_bert_optimizer.step()
-        self.critic_optimizer.step()
+        for opt in self.optimizers:
+            opt.step()
+        # self.vln_bert_optimizer.step()
+        # self.critic_optimizer.step()
 
     def train(self, n_iters, feedback='teacher', **kwargs):
         ''' Train for a given number of iterations '''
         self.feedback = feedback
 
-        self.vln_bert.train()
-        self.critic.train()
+        for model in self.models:
+            model.train()
+        # self.vln_bert.train()
+        # self.critic.train()
 
         self.losses = []
         for iter in range(1, n_iters + 1):
@@ -536,12 +661,13 @@ class Seq2SeqAgent(BaseAgent):
             else:
                 assert False
 
-            self.loss.backward()
-
-            torch.nn.utils.clip_grad_norm(self.vln_bert.parameters(), 40.)
-
-            self.vln_bert_optimizer.step()
-            self.critic_optimizer.step()
+            self.optim_step()
+            # self.loss.backward()
+            #
+            # torch.nn.utils.clip_grad_norm(self.vln_bert.parameters(), 40.)
+            #
+            # self.vln_bert_optimizer.step()
+            # self.critic_optimizer.step()
 
             if args.aug is None:
                 print_progress(iter, n_iters+1, prefix='Progress:', suffix='Complete', bar_length=50)
