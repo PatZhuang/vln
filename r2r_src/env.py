@@ -310,12 +310,15 @@ class R2RBatch():
                         else:
                             adj_dict[loc.viewpointId]['feature'] = np.concatenate((visual_feat, angle_feat), -1)
             for k, v in adj_dict.items():
-                obj_info = self.obj_dict[scanId][viewpointId][v['pointId']]
-                adj_dict[k]['obj_info'] = {
-                    'obj_class' : self.tok.convert_tokens_to_ids(obj_info['obj_class'][:args.top_N_obj]),
-                    'bbox'      : obj_info['bbox'][:args.top_N_obj],
-                    'score'     : obj_info['score'][:args.top_N_obj]
-                }
+                if self.obj_dict is not None:
+                    obj_info = self.obj_dict[scanId][viewpointId][v['pointId']]
+                    adj_dict[k]['obj_info'] = {
+                        'obj_class' : self.tok.convert_tokens_to_ids(obj_info['obj_class'][:args.top_N_obj]),
+                        'bbox'      : obj_info['bbox'][:args.top_N_obj],
+                        'score'     : obj_info['score'][:args.top_N_obj]
+                    }
+                else:
+                    adj_dict[k]['obj_info'] = None
             candidate = list(adj_dict.values())
             self.buffered_state_dict[long_id] = [
                 {key: c[key]

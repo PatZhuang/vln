@@ -366,9 +366,10 @@ class Seq2SeqAgent(BaseAgent):
             input_a_t = input_feat['input_a_t']
             candidate_feat = input_feat['cand_feat']
             candidate_leng = input_feat['cand_leng']
-            candidate_pos  = input_feat['cand_pos']
-            object_feat = input_feat['obj_feat']
-            object_bbox = input_feat['obj_bbox']
+            if args.object:
+                candidate_pos  = input_feat['cand_pos']
+                object_feat = input_feat['obj_feat']
+                object_bbox = input_feat['obj_bbox']
 
             # the first [CLS] token, initialized by the language BERT, serves
             # as the agent's state passing through time steps
@@ -376,18 +377,21 @@ class Seq2SeqAgent(BaseAgent):
                 language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
 
             candidate_mask = utils.length2mask(candidate_leng)
-            '''Object BERT'''
-            object_inputs = {
-                'mode': 'object',
-                'sentence': language_features,
-                'obj_feat': object_feat,
-                'obj_bbox': object_bbox,
-                'cand_pos': candidate_pos,
-                'lang_mask': language_attention_mask,
-                'cand_mask': candidate_mask,
-            }
+            if args.object:
+                '''Object BERT'''
+                object_inputs = {
+                    'mode': 'object',
+                    'sentence': language_features,
+                    'obj_feat': object_feat,
+                    'obj_bbox': object_bbox,
+                    'cand_pos': candidate_pos,
+                    'lang_mask': language_attention_mask,
+                    'cand_mask': candidate_mask,
+                }
 
-            obj_action_scores = self.vln_bert(**object_inputs)
+                obj_action_scores = self.vln_bert(**object_inputs)
+            else:
+                obj_action_scores = 1
 
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
@@ -501,26 +505,10 @@ class Seq2SeqAgent(BaseAgent):
             input_a_t = input_feat['input_a_t']
             candidate_feat = input_feat['cand_feat']
             candidate_leng = input_feat['cand_leng']
-            candidate_pos = input_feat['cand_pos']
-            object_feat = input_feat['obj_feat']
-            object_bbox = input_feat['obj_bbox']
 
             language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
 
             candidate_mask = utils.length2mask(candidate_leng)
-
-            object_inputs = {
-                'mode': 'object',
-                'sentence': language_features,
-                'obj_feat': object_feat,
-                'obj_bbox': object_bbox,
-                'cand_pos': candidate_pos,
-                'lang_mask': language_attention_mask,
-                'cand_mask': candidate_mask,
-            }
-
-            obj_action_scores = self.vln_bert(**object_inputs)
-
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
 

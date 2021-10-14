@@ -15,6 +15,7 @@ class Param:
         self.parser.add_argument('--train', type=str, default='listener')
         self.parser.add_argument('--description', type=str, default='no description\n')
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
+        self.parser.add_argument("--object", action="store_const", default=False, const=True)
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
