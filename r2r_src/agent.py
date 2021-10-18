@@ -171,8 +171,13 @@ class Seq2SeqAgent(BaseAgent):
         candidate_leng = [len(ob['candidate']) + 1 for ob in obs]  # +1 is for the end
         candidate_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size + args.angle_feat_size), dtype=np.float32)
         candidate_obj_class = np.zeros((len(obs), max(candidate_leng), args.top_N_obj), dtype=np.float32)
-        candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, 4), dtype=np.float32)
-        candidate_pos = np.zeros((len(obs), max(candidate_leng), 4), dtype=np.float32)
+
+        if args.nerf_pe:
+            candidate_pos = np.zeros((len(obs), max(candidate_leng), self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
+            candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
+        else:
+            candidate_pos = np.zeros((len(obs), max(candidate_leng), 4), dtype=np.float32)
+            candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, 4), dtype=np.float32)
         # Note: The candidate_feat at len(ob['candidate']) is the feature for the END
         # which is zero in my implementation
         for i, ob in enumerate(obs):
@@ -182,9 +187,25 @@ class Seq2SeqAgent(BaseAgent):
                 else:
                     candidate_feat[i, j, :] = cc['feature']
                     candidate_obj_class[i, j, :] = cc['obj_info']['obj_class']
-                    candidate_obj_bbox[i, j, :] = cc['obj_info']['bbox']
-                    candidate_pos[i, j, :] = cc['feature'][-4:] # [sin(heading), cos(heading), sin(elev), cos(elev)]
-
+                    if args.nerf_pe:
+                        candidate_obj_bbox[i, j, :] = np.array([[[[math.sin(2 ** L * math.pi * bbox[0]),
+                                                                 math.sin(2 ** L * math.pi * bbox[0]),
+                                                                 math.sin(2 ** L * math.pi * bbox[1]),
+                                                                 math.sin(2 ** L * math.pi * bbox[1]),
+                                                                 math.sin(2 ** L * math.pi * bbox[2]),
+                                                                 math.sin(2 ** L * math.pi * bbox[2]),
+                                                                 math.sin(2 ** L * math.pi * bbox[3]),
+                                                                 math.sin(2 ** L * math.pi * bbox[3]),
+                                                                 ] for L in range(8)] * (self.vln_bert.vln_bert.config.hidden_size // 64)]
+                                                                for bbox in cc['obj_info']['bbox']]).reshape(candidate_obj_bbox.shape[-2:])
+                        candidate_pos[i, j, :] = np.array([[math.sin(2 ** L * math.pi * cc['heading']),
+                                                           math.cos(2 ** L * math.pi * cc['heading']),
+                                                           math.sin(2 ** L * math.pi * cc['elevation']),
+                                                           math.cos(2 ** L * math.pi * cc['elevation'])]
+                                                           for L in range(4)] * (self.vln_bert.vln_bert.config.hidden_size // 16)).flatten()
+                    else:
+                        candidate_obj_bbox[i, j, :] = cc['obj_info']['bbox']
+                        candidate_pos[i, j, :] = cc['feature'][args.feature_size:args.feature_size+4] # [sin(heading), cos(heading), sin(elev), cos(elev)]
         return {
             'candidate_feat': torch.from_numpy(candidate_feat).cuda(),
             'candidate_leng': candidate_leng,
@@ -192,7 +213,6 @@ class Seq2SeqAgent(BaseAgent):
             'candidate_obj_bbox' : torch.from_numpy(candidate_obj_bbox).cuda(),
             'candidate_pos'      : torch.from_numpy(candidate_pos).cuda()
         }
-        return torch.from_numpy(candidate_feat).cuda(), candidate_leng
 
     def _get_obj_input(self, obs):
         candidates = [ob['candidate'] for ob in obs]    # (bs, cand_len)
@@ -632,8 +652,8 @@ class Seq2SeqAgent(BaseAgent):
         self.losses = []
         for iter in range(1, n_iters + 1):
 
-            self.vln_bert_optimizer.zero_grad()
-            self.critic_optimizer.zero_grad()
+            for opt in self.optimizers:
+                opt.zero_grad()
 
             self.loss = 0
 

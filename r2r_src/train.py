@@ -214,7 +214,8 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
         val_env_names = ['val_train_seen']
     else:
         featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
-        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
+        # TODO: add 'val_train_seen'
+        val_env_names = ['val_seen', 'val_unseen']
 
     with open(OBJECT_INFO_STORE, 'rb') as f:
         obj_store = pkl.load(f)

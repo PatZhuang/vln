@@ -6,8 +6,41 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from param import args
+import math
 
 from vlnbert.vlnbert_init import get_vlnbert_models
+
+
+class NeRF_PE(nn.Module):
+    def __init__(self, hidden_size):
+        super(NeRF_PE, self).__init__()
+        self.hidden_size = hidden_size
+
+    def forward(self, x):
+        input_shape = x.shape
+        if input_shape[-1] == 2:    # heading, elevation
+            x = x.view(-1, 2)
+            pe = torch.tensor([[[math.sin(2 ** L * math.pi * bbox[0]),
+                                 math.cos(2 ** L * math.pi * bbox[0]),
+                                 math.sin(2 ** L * math.pi * bbox[1]),
+                                 math.cos(2 ** L * math.pi * bbox[1]),
+                                 ] for L in range(4)] * (self.hidden_size // 16) for bbox in x])
+
+        elif input_shape[-1] == 4:  # bbox
+            x = x.view(-1, 4)
+            pe = torch.tensor([[[math.sin(2 ** L * math.pi * bbox[0]),
+                                          math.cos(2 ** L * math.pi * bbox[0]),
+                                          math.sin(2 ** L * math.pi * bbox[1]),
+                                          math.cos(2 ** L * math.pi * bbox[1]),
+                                          math.sin(2 ** L * math.pi * bbox[2]),
+                                          math.cos(2 ** L * math.pi * bbox[2]),
+                                          math.sin(2 ** L * math.pi * bbox[3]),
+                                          math.cos(2 ** L * math.pi * bbox[3])
+                                          ] for L in range(8)] * (self.hidden_size // 64) for bbox in x])
+        else:
+            raise ValueError('wrong feat size')
+        pe = pe.view(list(input_shape[:-1]) + [self.hidden_size])
+        return pe
 
 class VLNBERT(nn.Module):
     def __init__(self, feature_size=2048+128):
@@ -33,11 +66,7 @@ class VLNBERT(nn.Module):
         self.state_LayerNorm = BertLayerNorm(hidden_size, eps=layer_norm_eps)
 
         # object
-        if args.nerf_encoding:
-            # TODO: add nerf
-            self.obj_pos_proj = nn.Linear(4, hidden_size)
-        else:
-            self.obj_pos_proj = nn.Linear(4, hidden_size)
+        self.obj_pos_proj = nn.Linear(4, hidden_size)
         self.cand_pos_proj = nn.Linear(4, hidden_size)
         self.pos_encoding_ln = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.obj_dropout = nn.Dropout(p=args.featdropout)
@@ -49,14 +78,17 @@ class VLNBERT(nn.Module):
 
         if mode == 'language':
             init_state, encoded_sentence = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
-
             return init_state, encoded_sentence
 
         if mode == 'object':
-            # object position in candidate views respectively
-            obj_pos_encoding = self.obj_pos_proj(obj_bbox)  # (bs, max_cand_len, 8, hidden_size)
-            # candidate position relative to current base view
-            cand_pos_encoding = self.cand_pos_proj(cand_pos).unsqueeze(2).repeat(1,1,args.top_N_obj,1)
+            if not args.nerf_pe:
+                # object position in candidate views respectively
+                obj_pos_encoding = self.obj_pos_proj(obj_bbox)  # (bs, max_cand_len, 8, hidden_size)
+                # candidate position relative to current base view
+                cand_pos_encoding = self.cand_pos_proj(cand_pos).unsqueeze(2).repeat(1,1,args.top_N_obj,1)
+            else:
+                obj_pos_encoding = obj_bbox.cuda()
+                cand_pos_encoding = cand_pos.unsqueeze(2).repeat(1,1,args.top_N_obj,1).cuda()
             pos_encoding = self.pos_encoding_ln(obj_pos_encoding + cand_pos_encoding)
 
             obj_action_scores = self.vln_bert(mode, sentence, lang_mask=lang_mask, cand_mask=cand_mask,

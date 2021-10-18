@@ -378,9 +378,17 @@ def angle_feature(heading, elevation):
     # twopi = math.pi * 2
     # heading = (heading + twopi) % twopi     # From 0 ~ 2pi
     # It will be the same
-    return np.array([math.sin(heading), math.cos(heading),
+    if not args.nerf_pe:
+        return np.array([math.sin(heading), math.cos(heading),
                      math.sin(elevation), math.cos(elevation)] * (args.angle_feat_size // 4),
                     dtype=np.float32)
+    else:
+        angle_feat = np.array([[math.sin(2**L * heading),
+                               math.cos(2**L * heading),
+                               math.sin(2**L * elevation),
+                               math.cos(2**L * elevation)] for L in range(32)], dtype=np.float32).flatten()
+
+        return angle_feat
 
 def new_simulator():
     import MatterSim

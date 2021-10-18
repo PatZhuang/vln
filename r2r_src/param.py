@@ -16,6 +16,7 @@ class Param:
         self.parser.add_argument('--description', type=str, default='no description\n')
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
         self.parser.add_argument("--object", action="store_const", default=False, const=True)
+        # self.parser.add_argument('--warm_up_epochs', type=int, default=5, help='warmup')
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
@@ -26,7 +27,7 @@ class Param:
         self.parser.add_argument("--loadOptim",action="store_const", default=False, const=True)
         self.parser.add_argument("--patchVis", action="store_const", default=False, const=True)
         self.parser.add_argument('--top_N_obj', type=int, default=8)
-        self.parser.add_argument("--nerf_encoding", action="store_const", default=False, const=True)
+        self.parser.add_argument("--nerf_pe", action="store_const", default=False, const=True)
 
         # Load the model from
         self.parser.add_argument("--load", default=None, help='path of the trained model')
