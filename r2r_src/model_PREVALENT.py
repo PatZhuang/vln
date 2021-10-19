@@ -20,11 +20,11 @@ class NeRF_PE(nn.Module):
         input_shape = x.shape
         if input_shape[-1] == 2:    # heading, elevation
             x = x.view(-1, 2)
-            pe = torch.tensor([[[math.sin(2 ** L * math.pi * bbox[0]),
-                                 math.cos(2 ** L * math.pi * bbox[0]),
-                                 math.sin(2 ** L * math.pi * bbox[1]),
-                                 math.cos(2 ** L * math.pi * bbox[1]),
-                                 ] for L in range(4)] * (self.hidden_size // 16) for bbox in x])
+            pe = torch.tensor([[[math.sin(2 ** L * math.pi * pos[0]),
+                                 math.cos(2 ** L * math.pi * pos[0]),
+                                 math.sin(2 ** L * math.pi * pos[1]),
+                                 math.cos(2 ** L * math.pi * pos[1]),
+                                 ] for L in range(4)] * (self.hidden_size // 16) for pos in x])
 
         elif input_shape[-1] == 4:  # bbox
             x = x.view(-1, 4)

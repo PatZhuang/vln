@@ -125,6 +125,12 @@ class Seq2SeqAgent(BaseAgent):
             self.env.vit_model = vit_model
             self.env.img_process = img_process
 
+        warm_up_with_cosine_lr = lambda epoch: epoch / args.warm_up_epochs if epoch <= args.warm_up_epochs else 0.5 * (
+                math.cos(
+                    (epoch - args.warm_up_epochs) / (args.iters // args.log_every - args.warm_up_epochs) * math.pi) + 1)
+        self.schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda=warm_up_with_cosine_lr) for opt in
+                           self.optimizers]
+
         if args.apex:
             self.models, self.optimizers = amp.initialize(self.models, self.optimizers, opt_level='O1')
 
@@ -381,7 +387,6 @@ class Seq2SeqAgent(BaseAgent):
         ml_loss = 0.
 
         for t in range(self.episode_len):
-
             input_feat = self.get_input_feat(perm_obs)
             input_a_t = input_feat['input_a_t']
             candidate_feat = input_feat['cand_feat']
@@ -679,6 +684,10 @@ class Seq2SeqAgent(BaseAgent):
 
             if args.aug is None:
                 print_progress(iter, n_iters+1, prefix='Progress:', suffix='Complete', bar_length=50)
+
+        for sch in self.schedulers:
+            sch.step()
+            lr = sch.get_last_lr()
 
     def save(self, epoch, path):
         ''' Snapshot models '''

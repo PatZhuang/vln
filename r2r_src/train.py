@@ -49,13 +49,13 @@ if args.patchVis:
     sys.path.append('../deit')
     from deit.datasets import build_transform
     from deit.main import get_args_parser
-    from deit.cait_models import cait_XS24
+    from deit.cait_models import cait_XXS24_224 as cait_model
 
 print(args); print('')
 
 
 ''' train the listener '''
-def train(train_env, tok, n_iters, log_every=2000, val_envs={}, aug_env=None, vit_model=None, vit_args=None):
+def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_env=None, vit_model=None, vit_args=None):
     writer = SummaryWriter(log_dir=log_dir)
     listner = Seq2SeqAgent(train_env, "", tok, args.maxAction, vit_model, vit_args)
 
@@ -117,7 +117,7 @@ def train(train_env, tok, n_iters, log_every=2000, val_envs={}, aug_env=None, vi
         # print("total_actions", total, ", max_length", length)
 
         # Run validation
-        loss_str = "iter {}".format(iter)
+        loss_str = "iter {}\n".format(iter)
         for env_name, (env, evaluator) in val_envs.items():
             listner.env = env
 
@@ -204,8 +204,8 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
     setup()
     tok = get_tokenizer(args)
 
-    if args.patchVis:
-        feat_dict = read_img(features)
+    if args.render_image:
+        feat_dict = None
     else:
         feat_dict = read_img_features(features, test_only=test_only)
 
@@ -213,14 +213,16 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
         featurized_scans = None
         val_env_names = ['val_train_seen']
     else:
-        featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
-        # TODO: add 'val_train_seen'
-        val_env_names = ['val_seen', 'val_unseen']
+        if feat_dict is not None:
+            featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
+        else:
+            featurized_scans = None
+        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
 
     with open(OBJECT_INFO_STORE, 'rb') as f:
         obj_store = pkl.load(f)
 
-    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store)
+    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store, img_process=img_process)
     from collections import OrderedDict
 
     if args.submit:
@@ -230,19 +232,12 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
 
     val_envs = OrderedDict(
         ((split,
-          (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok, obj_store=obj_store),
+          (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok, obj_store=obj_store, img_process=img_process),
            Evaluation([split], featurized_scans, tok))
           )
          for split in val_env_names
          )
     )
-
-    if args.patchVis:
-        train_env.vit_model = vit_model
-        train_env.img_process = img_process
-        # TODO: image process in validation should be checked
-        val_envs.vit_model = vit_model
-        val_envs.img_process = img_process
 
     if args.train == 'listener':
         train(train_env, tok, args.iters, val_envs=val_envs, vit_args=vit_args, vit_model=vit_model)
@@ -262,7 +257,7 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
 
     # Load the env img features
     if args.patchVis:
-        feat_dict = read_img(features)
+        feat_dict = None
     else:
         feat_dict = read_img_features(features, test_only=test_only)
 
@@ -270,7 +265,10 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
         featurized_scans = None
         val_env_names = ['val_train_seen']
     else:
-        featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
+        if feat_dict is not None:
+            featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
+        else:
+            featurized_scans = None
         val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
 
     with open(OBJECT_INFO_STORE, 'rb') as f:
@@ -279,22 +277,13 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
     # Load the augmentation data
     aug_path = args.aug
     # Create the training environment
-    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok_bert, obj_store=obj_store)
-    aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[aug_path], tokenizer=tok_bert, name='aug', obj_store=obj_store)
+    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process)
+    aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[aug_path], tokenizer=tok_bert, name='aug', obj_store=obj_store, img_process=img_process)
 
     # Setup the validation data
-    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok_bert, obj_store=obj_store),
+    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process),
                 Evaluation([split], featurized_scans, tok_bert))
                 for split in val_env_names}
-
-    if args.patchVis:
-        train_env.vit_model = vit_model
-        train_env.img_process = img_process
-        aug_env.vit_model = vit_model
-        aug_env.img_process = img_process
-        # TODO: image process in validation should be checked
-        val_envs.vit_model = vit_model
-        val_envs.img_process = img_process
 
     # Start training
     train(train_env, tok_bert, args.iters, val_envs=val_envs, aug_env=aug_env, vit_model=vit_model, vit_args=vit_args)
@@ -307,7 +296,7 @@ if __name__ == "__main__":
         vit_args.lr            = 5e-6
         vit_args.weight_decay  = 0.05
         vit_args.decay_epochs  = 10
-        vit_args.input_size    = 384   # for XS24-384
+        vit_args.input_size    = 224   # for XXS24_224
         vit_args.repeated_aug  = True
         vit_args.smoothing     = 0.1
         vit_args.warmup_epochs = 5
@@ -317,7 +306,7 @@ if __name__ == "__main__":
 
         img_process = build_transform(True, vit_args)
 
-        vit_model = cait_XS24(pretrained=True)
+        vit_model = cait_model(pretrained=True)
 
         vit_model.norm = torch.nn.Identity()
         vit_model.head = torch.nn.Linear(vit_model.embed_dim, args.feature_size)

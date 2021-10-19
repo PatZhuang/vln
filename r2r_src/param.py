@@ -16,7 +16,11 @@ class Param:
         self.parser.add_argument('--description', type=str, default='no description\n')
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
         self.parser.add_argument("--object", action="store_const", default=False, const=True)
-        # self.parser.add_argument('--warm_up_epochs', type=int, default=5, help='warmup')
+        self.parser.add_argument("--render_image", action="store_const", default=False, const=True)
+        self.parser.add_argument('--warm_up_epochs', type=int, default=5, help='warmup')
+        self.parser.add_argument('--image_w', type=int, default=640, help='image width')
+        self.parser.add_argument('--image_h', type=int, default=480, help='image height')
+        self.parser.add_argument('--log_every', type=int, default=2000, help='image height')
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")

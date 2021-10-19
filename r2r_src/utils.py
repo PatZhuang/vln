@@ -386,7 +386,7 @@ def angle_feature(heading, elevation):
         angle_feat = np.array([[math.sin(2**L * heading),
                                math.cos(2**L * heading),
                                math.sin(2**L * elevation),
-                               math.cos(2**L * elevation)] for L in range(32)], dtype=np.float32).flatten()
+                               math.cos(2**L * elevation)] for L in range(4)] * (args.angle_feat_size // 16), dtype=np.float32).flatten()
 
         return angle_feat
 

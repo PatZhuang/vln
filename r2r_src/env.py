@@ -20,6 +20,7 @@ import random
 import networkx as nx
 from param import args
 import cv2
+from PIL import Image
 
 from utils import load_datasets, load_nav_graphs, pad_instr_tokens
 
@@ -40,22 +41,22 @@ class EnvBatch():
         if feature_store:
             if type(feature_store) is dict:     # A silly way to avoid multiple reading
                 self.features = feature_store
-                self.image_w = 640
-                self.image_h = 480
+                self.image_w = args.image_w
+                self.image_h = args.image_h
                 self.vfov = 60
                 self.feature_size = next(iter(self.features.values())).shape[-1]
                 print('The feature size is %d' % self.feature_size)
         else:
-            print('    Image features not provided - in testing mode')
+            print('Image features not provided')
             self.features = None
-            self.image_w = 640
-            self.image_h = 480
+            self.image_w = args.image_w
+            self.image_h = args.image_h
             self.vfov = 60
-        self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
+        # self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
         self.batch_size = batch_size
 
         self.sims = MatterSim.Simulator()
-        self.sims.setRenderingEnabled(False)
+        self.sims.setRenderingEnabled(args.render_image)
         self.sims.setDiscretizedViewingAngles(True)
         self.sims.setBatchSize(self.batch_size)
         self.sims.setCameraResolution(self.image_w, self.image_h)
@@ -98,9 +99,12 @@ class EnvBatch():
 class R2RBatch():
     ''' Implements the Room to Room navigation task, using discretized viewpoints and pretrained features '''
 
-    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], tokenizer=None, name=None, obj_store=None):
+    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], tokenizer=None, name=None, obj_store=None, img_process=None):
         self.env = EnvBatch(feature_store=feature_store, batch_size=batch_size)
         self.obj_dict = obj_store
+        # for vit
+        self.img_process = img_process
+
         if feature_store:
             self.feature_size = self.env.feature_size
         else:
@@ -162,22 +166,18 @@ class R2RBatch():
         self.sim = utils.new_simulator()
         self.buffered_state_dict = {}
 
-        # for vit
-        self.vit_model = None
-        self.img_process = None
-
         # neighbor point
-        self.pid2nbr_pid = np.zeros([36, 5], dtype=np.int32)
-        self.pid2angle = np.zeros([36, 2], dtype=np.float32)
-        for c in range(36):
-            l = c + 11 if c % 12 == 0 else c - 1
-            r = c - 11 if c % 12 == 11 else c + 1
-            t = -1 if c // 12 == 2 else c + 12
-            b = -1 if c // 12 == 0 else c - 12
-            self.pid2nbr_pid[c, :] = np.array([c, l, t, r, b], dtype=np.int32)
-            self.pid2angle[c, 0] = (c % 12) * math.radians(30)  # head of center view
-            self.pid2angle[c, 1] = (c // 12) * math.radians(30) + math.radians(-30)  # elevation of center view
-        self.pid2nbr_mask = (self.pid2nbr_pid == -1)
+        # self.pid2nbr_pid = np.zeros([36, 5], dtype=np.int32)
+        # self.pid2angle = np.zeros([36, 2], dtype=np.float32)
+        # for c in range(36):
+        #     l = c + 11 if c % 12 == 0 else c - 1
+        #     r = c - 11 if c % 12 == 11 else c + 1
+        #     t = -1 if c // 12 == 2 else c + 12
+        #     b = -1 if c // 12 == 0 else c - 12
+        #     self.pid2nbr_pid[c, :] = np.array([c, l, t, r, b], dtype=np.int32)
+        #     self.pid2angle[c, 0] = (c % 12) * math.radians(30)  # head of center view
+        #     self.pid2angle[c, 1] = (c // 12) * math.radians(30) + math.radians(-30)  # elevation of center view
+        # self.pid2nbr_mask = (self.pid2nbr_pid == -1)
 
         print('R2RBatch loaded with %d instructions, using splits: %s' % (len(self.data), ",".join(splits)))
 
@@ -299,18 +299,13 @@ class R2RBatch():
                             'idx'        : j + 1,
                         }
                         if args.patchVis:
-                            img_path = os.path.join(
-                                os.path.abspath('.'),
-                                'data', 'v1', 'rgb', scanId,
-                                viewpointId + '_' + str(ix) + '.jpg'
-                            )
-                            visual_feat = self.img_process(visual_feat).unsqueeze(0)
-                            visual_feat = self.vit_model(visual_feat).squeeze()
-                            adj_dict[loc.viewpointId]['feature'] = torch.cat((visual_feat, torch.tensor(angle_feat)), -1)
+                            adj_dict[loc.viewpointId]['feature'] = visual_feat  # pre-processed image as tensor
+                            adj_dict[loc.viewpointId]['angle_feat'] = angle_feat
+                            # adj_dict[loc.viewpointId]['feature'] = torch.cat((visual_feat, torch.tensor(angle_feat)), -1)
                         else:
                             adj_dict[loc.viewpointId]['feature'] = np.concatenate((visual_feat, angle_feat), -1)
             for k, v in adj_dict.items():
-                if self.obj_dict is not None:
+                if args.object:
                     obj_info = self.obj_dict[scanId][viewpointId][v['pointId']]
                     adj_dict[k]['obj_info'] = {
                         'obj_class' : self.tok.convert_tokens_to_ids(obj_info['obj_class'][:args.top_N_obj]),
@@ -318,7 +313,7 @@ class R2RBatch():
                         'score'     : obj_info['score'][:args.top_N_obj]
                     }
                 else:
-                    adj_dict[k]['obj_info'] = None
+                    adj_dict[k]['obj_info'] = {}
             candidate = list(adj_dict.values())
             self.buffered_state_dict[long_id] = [
                 {key: c[key]
@@ -334,11 +329,15 @@ class R2RBatch():
                 c_new = c.copy()
                 ix = c_new['pointId']
                 normalized_heading = c_new['normalized_heading']
-                visual_feat = feature[ix]
                 loc_heading = normalized_heading - base_heading
                 c_new['heading'] = loc_heading
                 angle_feat = utils.angle_feature(c_new['heading'], c_new['elevation'])
-                c_new['feature'] = np.concatenate((visual_feat, angle_feat), -1)
+                visual_feat = feature[ix]
+                if args.render_image:
+                    c_new['angle_feat'] = angle_feat
+                    c_new['feature'] = visual_feat
+                else:
+                    c_new['feature'] = np.concatenate((visual_feat, angle_feat), -1)
                 c_new.pop('normalized_heading')
                 candidate_new.append(c_new)
             return candidate_new
@@ -350,16 +349,31 @@ class R2RBatch():
             base_view_id = state.viewIndex
 
             if feature is None:
-                if args.patchVis:
-                    # TODO:
-                    pass
+                if args.render_image:
+                    feature = []
+                    for ix in range(36):
+                        if ix == 0:
+                            self.sim.newEpisode([state.scanId], [state.location.viewpointId], [0], [math.radians(-30)])
+                        elif ix % 12 == 0:
+                            self.sim.makeAction([0], [1.0], [1.0])
+                        else:
+                            self.sim.makeAction([0], [1.0], [0])
+
+                        s = self.sim.getState()[0]
+                        assert s.viewIndex == ix
+                        img = Image.fromarray(cv2.cvtColor(np.array(s.rgb), cv2.COLOR_BGR2RGB))
+                        img = self.img_process(img)
+                        feature.append(img)
                 else:
                     feature = np.zeros((36, 2048))
 
             # Full features
             candidate = self.make_candidate(feature, state.scanId, state.location.viewpointId, state.heading)
             # [visual_feature, angle_feature] for views
-            feature = np.concatenate((feature, self.angle_feature[base_view_id]), -1)
+            if args.render_image:
+                pass
+            else:
+                feature = np.concatenate((feature, self.angle_feature[base_view_id]), -1)
 
             obs.append({
                 'instr_id' : item['instr_id'],
@@ -374,7 +388,8 @@ class R2RBatch():
                 'instructions' : item['instructions'],
                 'teacher' : self._shortest_path_action(state, item['path'][-1]),
                 'gt_path' : item['path'],
-                'path_id' : item['path_id']
+                'path_id' : item['path_id'],
+                'angle_feat': self.angle_feature[base_view_id]
             })
             if 'instr_encoding' in item:
                 obs[-1]['instr_encoding'] = item['instr_encoding']

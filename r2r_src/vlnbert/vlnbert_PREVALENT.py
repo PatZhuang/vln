@@ -244,8 +244,8 @@ class BertOutAttention(nn.Module):
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         # dynamic temperature
-        # self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
-        # self.temp_act = nn.ReLU()
+        self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
+        self.temp_act = nn.ReLU()
 
         # visual_dim = 2048
         if ctx_dim is None:
@@ -275,8 +275,8 @@ class BertOutAttention(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
         # dynamic temperature
-        # dy_t = self.temp_act(self.temp_fc(query_layer))
-        # attention_scores = attention_scores * dy_t
+        dy_t = self.temp_act(self.temp_fc(query_layer))
+        attention_scores = attention_scores * dy_t
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         if attention_mask is not None:
