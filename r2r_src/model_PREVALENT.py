@@ -91,6 +91,9 @@ class VLNBERT(nn.Module):
                 cand_pos_encoding = cand_pos.unsqueeze(2).repeat(1,1,args.top_N_obj,1).cuda()
             pos_encoding = self.pos_encoding_ln(obj_pos_encoding + cand_pos_encoding)
 
+            if args.drop_obj:
+                obj_feat = self.obj_dropout(obj_feat)
+
             obj_action_scores = self.vln_bert(mode, sentence, lang_mask=lang_mask, cand_mask=cand_mask,
                                              obj_feat=obj_feat.long(), obj_pos_encoding=pos_encoding)
             return obj_action_scores

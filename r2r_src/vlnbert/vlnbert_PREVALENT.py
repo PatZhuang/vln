@@ -459,7 +459,7 @@ class VLNBert(BertPreTrainedModel):
             obj_action_scores = obj_attention_scores.view(obj_feat_shape[0], -1, obj_feat_shape[1], obj_feat_shape[2])
             # mean for multi-heads then mean for multi-objects
             obj_action_scores = obj_action_scores.mean(dim=1).mean(dim=-1)  # (bs, max_cand_len)
-            obj_action_scores = self.obj_SM(obj_action_scores)
+            # obj_action_scores = self.obj_SM(obj_action_scores)
 
             return obj_action_scores
 

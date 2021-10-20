@@ -434,7 +434,11 @@ class Seq2SeqAgent(BaseAgent):
                             'cand_feats':         candidate_feat}
             h_t, logit = self.vln_bert(**visual_inputs)
 
-            logit = logit * obj_action_scores
+            if not args.drop_obj:
+                logit = logit * obj_action_scores
+            elif args.object:
+                logit = logit + obj_action_scores
+
             hidden_states.append(h_t)
 
             # Mask outputs where agent can't move forward
