@@ -71,10 +71,14 @@ class VLNBERT(nn.Module):
         self.pos_encoding_ln = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.obj_dropout = nn.Dropout(p=args.featdropout)
 
+        if args.max_pool_feature:
+            self.feat_cat_fc = nn.Linear(args.feature_size * 2, args.feature_size)
+            self.feat_cat_alpha = nn.Parameter(torch.ones(1))
+
     def forward(self, mode, sentence, token_type_ids=None,
                 attention_mask=None, lang_mask=None, vis_mask=None,
                 position_ids=None, action_feats=None, pano_feats=None, cand_feats=None,
-                cand_pos=None, cand_mask=None, obj_feat=None, obj_bbox=None):
+                cand_pos=None, cand_mask=None, obj_feat=None, obj_bbox=None, cand_mp_feats=None):
 
         if mode == 'language':
             init_state, encoded_sentence = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
@@ -104,6 +108,14 @@ class VLNBERT(nn.Module):
             state_with_action = self.action_state_project(state_action_embed)
             state_with_action = self.action_LayerNorm(state_with_action)
             state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:,1:,:]), dim=1)
+
+            if cand_mp_feats is not None:
+                if args.mix_type == 'fc':
+                    cand_feats[..., :-args.angle_feat_size] = self.feat_cat_fc(
+                        torch.cat((cand_feats[..., :-args.angle_feat_size], cand_mp_feats), -1)
+                    )
+                elif args.mix_type == 'alpha':
+                    cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha * cand_mp_feats
 
             cand_feats[..., :-args.angle_feat_size] = self.drop_env(cand_feats[..., :-args.angle_feat_size])
 

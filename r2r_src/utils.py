@@ -17,8 +17,8 @@ import torchvision
 import cv2
 from numpy.linalg import norm
 from tqdm import tqdm
-from turbojpeg import TurboJPEG
-from multiprocessing import Pool, Manager
+# from turbojpeg import TurboJPEG
+# from multiprocessing import Pool, Manager
 from functools import wraps
 
 if args.patchVis:
@@ -391,7 +391,6 @@ def angle_feature(heading, elevation):
         return angle_feat
 
 def new_simulator():
-    import MatterSim
     # Simulator image parameters
     WIDTH = 640
     HEIGHT = 480

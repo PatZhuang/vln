@@ -176,22 +176,24 @@ class Seq2SeqAgent(BaseAgent):
     def _candidate_variable(self, obs):
         candidate_leng = [len(ob['candidate']) + 1 for ob in obs]  # +1 is for the end
         candidate_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size + args.angle_feat_size), dtype=np.float32)
-        candidate_obj_class = np.zeros((len(obs), max(candidate_leng), args.top_N_obj), dtype=np.float32)
+        if args.object:
+            candidate_obj_class = np.zeros((len(obs), max(candidate_leng), args.top_N_obj), dtype=np.float32)
+            if args.nerf_pe:
+                candidate_pos = np.zeros((len(obs), max(candidate_leng), self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
+                candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
+            else:
+                candidate_pos = np.zeros((len(obs), max(candidate_leng), 4), dtype=np.float32)
+                candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, 4), dtype=np.float32)
 
-        if args.nerf_pe:
-            candidate_pos = np.zeros((len(obs), max(candidate_leng), self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
-            candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
-        else:
-            candidate_pos = np.zeros((len(obs), max(candidate_leng), 4), dtype=np.float32)
-            candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, 4), dtype=np.float32)
+        if args.max_pool_feature:
+            candidate_mp_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size), dtype=np.float32)
+
         # Note: The candidate_feat at len(ob['candidate']) is the feature for the END
         # which is zero in my implementation
         for i, ob in enumerate(obs):
             for j, cc in enumerate(ob['candidate']):
-                if args.patchVis:
-                    pass
-                else:
-                    candidate_feat[i, j, :] = cc['feature']
+                candidate_feat[i, j, :] = cc['feature']
+                if args.object:
                     candidate_obj_class[i, j, :] = cc['obj_info']['obj_class']
                     if args.nerf_pe:
                         candidate_obj_bbox[i, j, :] = np.array([[[[math.sin(2 ** L * math.pi * bbox[0]),
@@ -212,13 +214,21 @@ class Seq2SeqAgent(BaseAgent):
                     else:
                         candidate_obj_bbox[i, j, :] = cc['obj_info']['bbox']
                         candidate_pos[i, j, :] = cc['feature'][args.feature_size:args.feature_size+4] # [sin(heading), cos(heading), sin(elev), cos(elev)]
-        return {
+                if args.max_pool_feature:
+                    candidate_mp_feat[i, j, :] = cc['mp_feature']
+        candidate_variable = {
             'candidate_feat': torch.from_numpy(candidate_feat).cuda(),
-            'candidate_leng': candidate_leng,
-            'candidate_obj_class': torch.from_numpy(candidate_obj_class).cuda(),
-            'candidate_obj_bbox' : torch.from_numpy(candidate_obj_bbox).cuda(),
-            'candidate_pos'      : torch.from_numpy(candidate_pos).cuda()
+            'candidate_leng': candidate_leng
         }
+        if args.object:
+            candidate_variable.update({
+                'candidate_obj_class': torch.from_numpy(candidate_obj_class).cuda(),
+                'candidate_obj_bbox': torch.from_numpy(candidate_obj_bbox).cuda(),
+                'candidate_pos': torch.from_numpy(candidate_pos).cuda()
+            })
+        if args.max_pool_feature:
+            candidate_variable['candidate_mp_feat'] = torch.from_numpy(candidate_mp_feat).cuda()
+        return candidate_variable
 
     def _get_obj_input(self, obs):
         candidates = [ob['candidate'] for ob in obs]    # (bs, cand_len)
@@ -233,19 +243,22 @@ class Seq2SeqAgent(BaseAgent):
 
         candidate_feat = candidate_variable['candidate_feat']
         candidate_leng = candidate_variable['candidate_leng']
-        candidate_obj_class = candidate_variable['candidate_obj_class']
-        candidate_obj_bbox  = candidate_variable['candidate_obj_bbox']
-        candidate_pos = candidate_variable['candidate_pos']
 
-        # return input_a_t, candidate_feat, candidate_leng
-        return {
+        input_feat = {
             'input_a_t': input_a_t,
             'cand_feat': candidate_feat,
-            'cand_leng': candidate_leng,
-            'cand_pos' : candidate_pos,
-            'obj_feat': candidate_obj_class,
-            'obj_bbox': candidate_obj_bbox,
+            'cand_leng': candidate_leng
         }
+        if args.object:
+            input_feat.update({
+                'cand_pos' : candidate_variable['candidate_pos'],
+                'obj_feat': candidate_variable['candidate_obj_class'],
+                'obj_bbox': candidate_variable['candidate_obj_bbox']
+            })
+        if args.max_pool_feature:
+            input_feat['candidate_mp_feat'] = candidate_variable['candidate_mp_feat']
+
+        return input_feat
 
     def _teacher_action(self, obs, ended):
         """
@@ -395,6 +408,10 @@ class Seq2SeqAgent(BaseAgent):
                 candidate_pos  = input_feat['cand_pos']
                 object_feat = input_feat['obj_feat']
                 object_bbox = input_feat['obj_bbox']
+            if args.max_pool_feature:
+                candidate_mp_feat = input_feat['candidate_mp_feat']
+            else:
+                candidate_mp_feat = None
 
             # the first [CLS] token, initialized by the language BERT, serves
             # as the agent's state passing through time steps
@@ -431,7 +448,8 @@ class Seq2SeqAgent(BaseAgent):
                             'token_type_ids':     token_type_ids,
                             'action_feats':       input_a_t,
                             # 'pano_feats':         f_t,
-                            'cand_feats':         candidate_feat}
+                            'cand_feats':         candidate_feat,
+                            'cand_mp_feats':      candidate_mp_feat}
             h_t, logit = self.vln_bert(**visual_inputs)
 
             if not args.drop_obj:
@@ -535,6 +553,11 @@ class Seq2SeqAgent(BaseAgent):
             candidate_feat = input_feat['cand_feat']
             candidate_leng = input_feat['cand_leng']
 
+            if args.max_pool_feature:
+                candidate_mp_feat = input_feat['candidate_mp_feat']
+            else:
+                candidate_mp_feat = None
+
             language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
 
             candidate_mask = utils.length2mask(candidate_leng)
@@ -551,7 +574,8 @@ class Seq2SeqAgent(BaseAgent):
                             'token_type_ids':     token_type_ids,
                             'action_feats':       input_a_t,
                             # 'pano_feats':         f_t,
-                            'cand_feats':         candidate_feat}
+                            'cand_feats':         candidate_feat,
+                            'cand_mp_feats':      candidate_mp_feat}
             last_h_, _ = self.vln_bert(**visual_inputs)
 
             rl_loss = 0.

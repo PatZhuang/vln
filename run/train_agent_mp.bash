@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-nerf-warmup
+name=VLNBERT-train-Prevalent-maxpool-fc
 
 flag="--vlnbert prevalent
 
@@ -20,7 +20,8 @@ flag="--vlnbert prevalent
       --featdropout 0.4
       --dropout 0.5
       --apex
-      --nerf_pe"
+      --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
+      --mix_type fc"
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name

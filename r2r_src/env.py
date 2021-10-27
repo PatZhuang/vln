@@ -99,11 +99,13 @@ class EnvBatch():
 class R2RBatch():
     ''' Implements the Room to Room navigation task, using discretized viewpoints and pretrained features '''
 
-    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], tokenizer=None, name=None, obj_store=None, img_process=None):
+    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], tokenizer=None, name=None, obj_store=None, img_process=None, mp_feature_store=None):
         self.env = EnvBatch(feature_store=feature_store, batch_size=batch_size)
         self.obj_dict = obj_store
         # for vit
         self.img_process = img_process
+        # for max pooled feature
+        self.mp_feature = mp_feature_store
 
         if feature_store:
             self.feature_size = self.env.feature_size
@@ -304,6 +306,8 @@ class R2RBatch():
                             # adj_dict[loc.viewpointId]['feature'] = torch.cat((visual_feat, torch.tensor(angle_feat)), -1)
                         else:
                             adj_dict[loc.viewpointId]['feature'] = np.concatenate((visual_feat, angle_feat), -1)
+                        if self.mp_feature is not None:
+                            adj_dict[loc.viewpointId]['mp_feature'] = self.mp_feature['_'.join([scanId, loc.viewpointId])]
             for k, v in adj_dict.items():
                 if args.object:
                     obj_info = self.obj_dict[scanId][viewpointId][v['pointId']]
@@ -338,6 +342,8 @@ class R2RBatch():
                     c_new['feature'] = visual_feat
                 else:
                     c_new['feature'] = np.concatenate((visual_feat, angle_feat), -1)
+                if self.mp_feature is not None:
+                    c_new['mp_feature'] = self.mp_feature['_'.join([c_new['scanId'], c_new['viewpointId']])]
                 c_new.pop('normalized_heading')
                 candidate_new.append(c_new)
             return candidate_new
@@ -393,6 +399,7 @@ class R2RBatch():
             })
             if 'instr_encoding' in item:
                 obs[-1]['instr_encoding'] = item['instr_encoding']
+
             # A2C reward. The negative distance between the state and the final state
             obs[-1]['distance'] = self.distances[state.scanId][state.location.viewpointId][item['path'][-1]]
         return obs
