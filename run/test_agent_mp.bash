@@ -1,11 +1,12 @@
-name=VLNBERT-train-Prevalent-nerf-warmup
+name=VLNBERT-test-Prevalent-maxpool-fc
 
 flag="--vlnbert prevalent
 
-      --aug data/prevalent/prevalent_aug.json
+      --submit 1
       --test_only 0
 
-      --train auglistener
+      --train validlistener
+      --load snap/VLNBERT-train-Prevalent-maxpool-fc/state_dict/best_val_unseen
 
       --features places365
       --maxAction 15
@@ -14,13 +15,16 @@ flag="--vlnbert prevalent
       --lr 1e-5
       --iters 300000
       --optim adamW
+
       --mlWeight 0.20
       --maxInput 80
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
-      --apex
-      --nerf_pe"
+      --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
+      --mix_type fc
+      "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=1 python r2r_src/train.py $flag --name $name
+

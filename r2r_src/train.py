@@ -185,11 +185,12 @@ def valid(train_env, tok, val_envs={}):
             print(loss_str)
 
         if args.submit:
-            json.dump(
-                result,
-                open(os.path.join(log_dir, "submit_%s.json" % env_name), 'w'),
-                sort_keys=True, indent=4, separators=(',', ': ')
-            )
+            with open(os.path.join(log_dir, "submit_%s.json" % env_name), 'w') as f:
+                json.dump(
+                    result,
+                    f,
+                    sort_keys=True, indent=4, separators=(',', ': ')
+                )
 
 def setup():
     torch.manual_seed(1)
@@ -269,7 +270,7 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
 
     if test_only:
         featurized_scans = None
-        val_env_names = ['val_train_seen']
+        val_env_names = []
     else:
         if feat_dict is not None:
             featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])

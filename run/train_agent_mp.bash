@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-maxpool-fc
+name=VLNBERT-train-Prevalent-maxpool-alpha-wodyt
 
 flag="--vlnbert prevalent
 
@@ -21,7 +21,8 @@ flag="--vlnbert prevalent
       --dropout 0.5
       --apex
       --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
-      --mix_type fc"
+      --mix_type al
+      "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name

@@ -623,17 +623,20 @@ def print_progress(iteration, total, prefix='', suffix='', decimals=1, bar_lengt
 
 def ndtw_initialize():
     ndtw_criterion = {}
-    scan_gts_dir = 'data/id_paths.json'
-    with open(scan_gts_dir) as f_:
-        scan_gts = json.load(f_)
+    scan_gts_dirs = ['data/id_paths.json']
+    if args.submit:
+        scan_gts_dirs.append('data/id_paths_test.json')
     all_scan_ids = []
-    for key in scan_gts:
-        path_scan_id = scan_gts[key][0]
-        # print('path_scan_id', path_scan_id)
-        if path_scan_id not in all_scan_ids:
-            all_scan_ids.append(path_scan_id)
-            ndtw_graph = ndtw_graphload(path_scan_id)
-            ndtw_criterion[path_scan_id] = DTW(ndtw_graph)
+    for scan_gts_dir in scan_gts_dirs:
+        with open(scan_gts_dir) as f_:
+            scan_gts = json.load(f_)
+        for key in scan_gts:
+            path_scan_id = scan_gts[key][0]
+            # print('path_scan_id', path_scan_id)
+            if path_scan_id not in all_scan_ids:
+                all_scan_ids.append(path_scan_id)
+                ndtw_graph = ndtw_graphload(path_scan_id)
+                ndtw_criterion[path_scan_id] = DTW(ndtw_graph)
     return ndtw_criterion
 
 def ndtw_graphload(scan):
