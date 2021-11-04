@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-maxpool-alpha-new
+name=VLNBERT-train-Prevalent-lbmp-alpha-fix
 
 flag="--vlnbert prevalent
 
@@ -20,9 +20,10 @@ flag="--vlnbert prevalent
       --featdropout 0.4
       --dropout 0.5
       --apex
+      --look_back_feature img_features/ResNet-152-places365-candidate.pkl
       --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
-      --mix_type al
+      --mix_type alpha
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=1 python r2r_src/train.py $flag --name $name

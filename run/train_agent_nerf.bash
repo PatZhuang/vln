@@ -23,4 +23,4 @@ flag="--vlnbert prevalent
       --nerf_pe"
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name

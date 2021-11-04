@@ -187,6 +187,8 @@ class Seq2SeqAgent(BaseAgent):
 
         if args.max_pool_feature:
             candidate_mp_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size), dtype=np.float32)
+        if args.look_back_feature:
+            candidate_lb_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size), dtype=np.float32)
 
         # Note: The candidate_feat at len(ob['candidate']) is the feature for the END
         # which is zero in my implementation
@@ -216,6 +218,8 @@ class Seq2SeqAgent(BaseAgent):
                         candidate_pos[i, j, :] = cc['feature'][args.feature_size:args.feature_size+4] # [sin(heading), cos(heading), sin(elev), cos(elev)]
                 if args.max_pool_feature:
                     candidate_mp_feat[i, j, :] = cc['mp_feature']
+                if args.look_back_feature:
+                    candidate_lb_feat[i, j, :] = cc['lb_feature']
         candidate_variable = {
             'candidate_feat': torch.from_numpy(candidate_feat).cuda(),
             'candidate_leng': candidate_leng
@@ -228,6 +232,8 @@ class Seq2SeqAgent(BaseAgent):
             })
         if args.max_pool_feature:
             candidate_variable['candidate_mp_feat'] = torch.from_numpy(candidate_mp_feat).cuda()
+        if args.look_back_feature:
+            candidate_variable['candidate_lb_feat'] = torch.from_numpy(candidate_lb_feat).cuda()
         return candidate_variable
 
     def _get_obj_input(self, obs):
@@ -257,6 +263,8 @@ class Seq2SeqAgent(BaseAgent):
             })
         if args.max_pool_feature:
             input_feat['candidate_mp_feat'] = candidate_variable['candidate_mp_feat']
+        if args.look_back_feature:
+            input_feat['candidate_lb_feat'] = candidate_variable['candidate_lb_feat']
 
         return input_feat
 
@@ -413,6 +421,11 @@ class Seq2SeqAgent(BaseAgent):
             else:
                 candidate_mp_feat = None
 
+            if args.look_back_feature:
+                candidate_lb_feat = input_feat['candidate_lb_feat']
+            else:
+                candidate_lb_feat = None
+
             # the first [CLS] token, initialized by the language BERT, serves
             # as the agent's state passing through time steps
             if (t >= 1) or (args.vlnbert=='prevalent'):
@@ -449,7 +462,8 @@ class Seq2SeqAgent(BaseAgent):
                             'action_feats':       input_a_t,
                             # 'pano_feats':         f_t,
                             'cand_feats':         candidate_feat,
-                            'cand_mp_feats':      candidate_mp_feat}
+                            'cand_mp_feats':      candidate_mp_feat,
+                            'cand_lb_feats':      candidate_lb_feat}
             h_t, logit = self.vln_bert(**visual_inputs)
 
             if not args.drop_obj:
@@ -558,6 +572,11 @@ class Seq2SeqAgent(BaseAgent):
             else:
                 candidate_mp_feat = None
 
+            if args.look_back_feature:
+                candidate_lb_feat = input_feat['candidate_lb_feat']
+            else:
+                candidate_lb_feat = None
+
             language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
 
             candidate_mask = utils.length2mask(candidate_leng)
@@ -575,7 +594,8 @@ class Seq2SeqAgent(BaseAgent):
                             'action_feats':       input_a_t,
                             # 'pano_feats':         f_t,
                             'cand_feats':         candidate_feat,
-                            'cand_mp_feats':      candidate_mp_feat}
+                            'cand_mp_feats':      candidate_mp_feat,
+                            'cand_lb_feats':      candidate_lb_feat}
             last_h_, _ = self.vln_bert(**visual_inputs)
 
             rl_loss = 0.

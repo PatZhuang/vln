@@ -211,6 +211,14 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
     if args.max_pool_feature:
         with open(str(args.max_pool_feature), 'rb') as f:
             mp_feat_dict = pkl.load(f)
+    else:
+        mp_feat_dict = None
+
+    if args.look_back_feature:
+        with open(str(args.look_back_feature), 'rb') as f:
+            lb_feat_dict = pkl.load(f)
+    else:
+        lb_feat_dict = None
 
     if test_only:
         featurized_scans = None
@@ -225,7 +233,8 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
     with open(OBJECT_INFO_STORE, 'rb') as f:
         obj_store = pkl.load(f)
 
-    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store, img_process=img_process, mp_feature_store=mp_feat_dict)
+    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store, img_process=img_process,
+                         mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
     from collections import OrderedDict
 
     if args.submit:
@@ -267,6 +276,14 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
     if args.max_pool_feature:
         with open(args.max_pool_feature, 'rb') as f:
             mp_feat_dict = pkl.load(f)
+    else:
+        mp_feat_dict = None
+
+    if args.look_back_feature:
+        with open(str(args.look_back_feature), 'rb') as f:
+            lb_feat_dict = pkl.load(f)
+    else:
+        lb_feat_dict = None
 
     if test_only:
         featurized_scans = None
@@ -284,11 +301,14 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
     # Load the augmentation data
     aug_path = args.aug
     # Create the training environment
-    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process, mp_feature_store=mp_feat_dict)
-    aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[aug_path], tokenizer=tok_bert, name='aug', obj_store=obj_store, img_process=img_process, mp_feature_store=mp_feat_dict)
+    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process,
+                         mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
+    aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[aug_path], tokenizer=tok_bert, name='aug', obj_store=obj_store, img_process=img_process,
+                         mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
 
     # Setup the validation data
-    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process, mp_feature_store=mp_feat_dict),
+    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process,
+                                 mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict),
                 Evaluation([split], featurized_scans, tok_bert))
                 for split in val_env_names}
 

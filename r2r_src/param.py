@@ -23,6 +23,7 @@ class Param:
         self.parser.add_argument('--log_every', type=int, default=2000, help='image height')
         self.parser.add_argument("--drop_obj", action="store_const", default=False, const=True)
         self.parser.add_argument('--max_pool_feature', type=str, default=None, help='path of the max pooled feature')
+        self.parser.add_argument('--look_back_feature', type=str, default=None, help='path of the look-back feature')
         self.parser.add_argument('--mix_type', type=str, default=None, help='max pool feature mix type, [fc, alpha]')
 
         # Data preparation
