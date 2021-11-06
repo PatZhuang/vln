@@ -378,6 +378,8 @@ class VLNBert(BertPreTrainedModel):
         self.embeddings = BertEmbeddings(config)
         self.pooler = BertPooler(config)
 
+        self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
+
         self.img_dim = config.img_feature_dim            # 2176
         logger.info('VLNBert Image Dimension: {}'.format(self.img_dim))
         self.img_feature_type = config.img_feature_type  # ''
@@ -413,6 +415,10 @@ class VLNBert(BertPreTrainedModel):
         if mode == 'language':
             ''' LXMERT language branch (in VLN only perform this at initialization) '''
             embedding_output = self.embeddings(input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
+
+            # for object tag matching
+            token_embed = self.token_embedding(input_ids)
+
             text_embeds = embedding_output
 
             for layer_module in self.lalayer:
@@ -422,47 +428,53 @@ class VLNBert(BertPreTrainedModel):
             sequence_output = text_embeds
             pooled_output = self.pooler(sequence_output)
 
-            return pooled_output, sequence_output
+            return pooled_output, sequence_output, token_embed
 
         if mode == 'object':
+            # object tag embedding
             obj_feat_shape = obj_feat.shape
             obj_feat = obj_feat.view(obj_feat_shape[0], -1) # (bs, max_cand_len * top_N_obj)
-            obj_embeds = self.embeddings(obj_feat, position_ids=torch.zeros_like(obj_feat))  # (bs, max_cand_len * top_N_obj, hidden_size)
-            obj_pos_encoding = obj_pos_encoding.view(obj_embeds.shape)
-            obj_pos_encoding[obj_embeds == 0] = 0    # to correspond to dropout of obj_embedding
-            obj_embeds = obj_embeds + obj_pos_encoding
+            # obj_embeds = self.embeddings(obj_feat, position_ids=torch.zeros_like(obj_feat))  # (bs, max_cand_len * top_N_obj, hidden_size)
+            obj_embeds = self.token_embedding(obj_feat)
+            # obj_pos_encoding = obj_pos_encoding.view(obj_embeds.shape)
+            # obj_pos_encoding[obj_embeds == 0] = 0    # to correspond to dropout of obj_embedding
+            # obj_embeds = obj_embeds + obj_pos_encoding
 
-            obj_mask = cand_mask.repeat_interleave(obj_feat_shape[-1], 1)
-            obj_mask = obj_mask.unsqueeze(1).unsqueeze(2)
-            obj_mask = obj_mask.to(dtype=next(self.parameters()).dtype)
-            obj_mask = obj_mask * -10000.0
+            # obj_mask = cand_mask.repeat_interleave(obj_feat_shape[-1], 1)
+            # obj_mask = obj_mask.unsqueeze(1).unsqueeze(2)
+            # obj_mask = obj_mask.to(dtype=next(self.parameters()).dtype)
+            # obj_mask = obj_mask * -10000.0
 
-            # for layer_module in self.lalayer:
-            #     temp_output = layer_module(obj_embeds, obj_mask)
-            #     obj_embeds = temp_output[0]
+            # calculate cosine similarity
+            similarity = torch.cosine_similarity(input_ids, obj_embeds, dim=2)
+            match_score = similarity.view(obj_feat_shape)    # (bs, max_cand, top_N_obj)
 
-            obj_output = obj_embeds
-            lang_output = input_ids
+            # # for layer_module in self.lalayer:
+            # #     temp_output = layer_module(obj_embeds, obj_mask)
+            # #     obj_embeds = temp_output[0]
+            #
+            # obj_output = obj_embeds
+            # lang_output = input_ids
+            #
+            # text_mask = lang_mask
+            # text_mask = text_mask.unsqueeze(1).unsqueeze(2)
+            # text_mask = text_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
+            # text_mask = text_mask * -10000.0
+            #
+            # # output shape: (bs, max_cand * top_N_obj, hidden_size)
+            # # language_attention_scores shape: (bs, num_attention_head, maxInput - 1)
+            # # obj_attention_scores shape: (bs, num_attention_head, max_cand_len * top_N_obj)
+            # for tdx, layer_module in enumerate(self.ollayer):
+            #     lang_output, obj_output, language_attention_scores, obj_attention_scores = layer_module(
+            #         lang_output, text_mask, obj_output, obj_mask, tdx
+            #     )
+            #
+            # obj_action_scores = obj_attention_scores.view(obj_feat_shape[0], -1, obj_feat_shape[1], obj_feat_shape[2])
+            # # mean for multi-heads then mean for multi-objects
+            # obj_action_scores = obj_action_scores.mean(dim=1).mean(dim=-1)  # (bs, max_cand_len)
+            # # obj_action_scores = self.obj_SM(obj_action_scores)
 
-            text_mask = lang_mask
-            text_mask = text_mask.unsqueeze(1).unsqueeze(2)
-            text_mask = text_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
-            text_mask = text_mask * -10000.0
-
-            # output shape: (bs, max_cand * top_N_obj, hidden_size)
-            # language_attention_scores shape: (bs, num_attention_head, maxInput - 1)
-            # obj_attention_scores shape: (bs, num_attention_head, max_cand_len * top_N_obj)
-            for tdx, layer_module in enumerate(self.ollayer):
-                lang_output, obj_output, language_attention_scores, obj_attention_scores = layer_module(
-                    lang_output, text_mask, obj_output, obj_mask, tdx
-                )
-
-            obj_action_scores = obj_attention_scores.view(obj_feat_shape[0], -1, obj_feat_shape[1], obj_feat_shape[2])
-            # mean for multi-heads then mean for multi-objects
-            obj_action_scores = obj_action_scores.mean(dim=1).mean(dim=-1)  # (bs, max_cand_len)
-            # obj_action_scores = self.obj_SM(obj_action_scores)
-
-            return obj_action_scores
+            return match_score
 
         elif mode == 'visual':
             ''' LXMERT visual branch (no language processing during navigation) '''

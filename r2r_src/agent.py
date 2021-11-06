@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from env import R2RBatch
 import utils
-from utils import padding_idx, print_progress
+from utils import padding_idx, print_progress, gumbel_softmax
 import model_OSCAR, model_PREVALENT
 import param
 from param import args
@@ -124,6 +124,14 @@ class Seq2SeqAgent(BaseAgent):
 
             self.env.vit_model = vit_model
             self.env.img_process = img_process
+
+        if args.locate_instruction:
+            self.instr_locator = nn.Linear(768, args.maxInput).cuda()
+
+            self.models += [self.instr_locator]
+
+            self.instr_locator_optimizer = torch.optim.SGD(self.instr_locator.parameters(), lr=1e-4)
+            self.optimizers += [self.instr_locator_optimizer]
 
         warm_up_with_cosine_lr = lambda epoch: epoch / args.warm_up_epochs if epoch <= args.warm_up_epochs else 0.5 * (
                 math.cos(
@@ -380,7 +388,7 @@ class Seq2SeqAgent(BaseAgent):
         if args.vlnbert == 'oscar':
             language_features = self.vln_bert(**language_inputs)
         elif args.vlnbert == 'prevalent':
-            h_t, language_features = self.vln_bert(**language_inputs)
+            h_t, language_features, token_embeds = self.vln_bert(**language_inputs)
 
         # Record starting point
         traj = [{
@@ -412,14 +420,27 @@ class Seq2SeqAgent(BaseAgent):
             input_a_t = input_feat['input_a_t']
             candidate_feat = input_feat['cand_feat']
             candidate_leng = input_feat['cand_leng']
+
             if args.object:
                 candidate_pos  = input_feat['cand_pos']
                 object_feat = input_feat['obj_feat']
                 object_bbox = input_feat['obj_bbox']
+
             if args.max_pool_feature:
                 candidate_mp_feat = input_feat['candidate_mp_feat']
             else:
                 candidate_mp_feat = None
+
+            # locate instruction
+            if args.locate_instruction:
+                instr_attn_prob = self.instr_locator(h_t)
+                instr_mask = utils.length2mask([sl.item() for sl in seq_lengths], size=args.maxInput)
+                instr_attn_prob.masked_fill_(instr_mask, -float('inf'))
+                instr_attn_weight = gumbel_softmax(instr_attn_prob, tau=0.1, hard=args.st_gumbel)
+                assert not torch.isnan(instr_attn_weight).any()
+                sampled_instr = torch.sum((token_embeds * instr_attn_weight.unsqueeze(-1)), 1).unsqueeze(1)
+            else:
+                sampled_instr = language_features
 
             if args.look_back_feature:
                 candidate_lb_feat = input_feat['candidate_lb_feat']
@@ -436,17 +457,17 @@ class Seq2SeqAgent(BaseAgent):
                 '''Object BERT'''
                 object_inputs = {
                     'mode': 'object',
-                    'sentence': language_features,
+                    'sentence': sampled_instr,
                     'obj_feat': object_feat,
                     'obj_bbox': object_bbox,
                     'cand_pos': candidate_pos,
-                    'lang_mask': language_attention_mask,
                     'cand_mask': candidate_mask,
+                    'lang_mask': language_attention_mask
                 }
 
-                obj_action_scores = self.vln_bert(**object_inputs)
+                obj_instr_match_score = self.vln_bert(**object_inputs)
             else:
-                obj_action_scores = 1
+                obj_instr_match_score = 1
 
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
@@ -466,10 +487,8 @@ class Seq2SeqAgent(BaseAgent):
                             'cand_lb_feats':      candidate_lb_feat}
             h_t, logit = self.vln_bert(**visual_inputs)
 
-            if not args.drop_obj:
-                logit = logit * obj_action_scores
-            elif args.object:
-                logit = logit + obj_action_scores
+            if args.object:
+                logit = logit * obj_instr_match_score
 
             hidden_states.append(h_t)
 

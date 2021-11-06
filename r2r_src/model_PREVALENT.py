@@ -74,7 +74,7 @@ class VLNBERT(nn.Module):
         extra_feat = (args.max_pool_feature is not None) + (args.look_back_feature is not None)
 
         if extra_feat > 0:
-            self.feat_cat_fc = nn.Linear(args.feature_size * extra_feat, args.feature_size)
+            self.feat_cat_fc = nn.Linear(args.feature_size * (extra_feat + 1), args.feature_size)
             self.feat_cat_alpha = nn.Parameter(torch.ones(extra_feat))
 
 
@@ -84,26 +84,36 @@ class VLNBERT(nn.Module):
                 cand_pos=None, cand_mask=None, obj_feat=None, obj_bbox=None, cand_mp_feats=None, cand_lb_feats=None):
 
         if mode == 'language':
-            init_state, encoded_sentence = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
-            return init_state, encoded_sentence
+            init_state, encoded_sentence, token_embeds = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
+            return init_state, encoded_sentence, token_embeds
 
         if mode == 'object':
-            if not args.nerf_pe:
-                # object position in candidate views respectively
-                obj_pos_encoding = self.obj_pos_proj(obj_bbox)  # (bs, max_cand_len, 8, hidden_size)
-                # candidate position relative to current base view
-                cand_pos_encoding = self.cand_pos_proj(cand_pos).unsqueeze(2).repeat(1,1,args.top_N_obj,1)
-            else:
-                obj_pos_encoding = obj_bbox.cuda()
-                cand_pos_encoding = cand_pos.unsqueeze(2).repeat(1,1,args.top_N_obj,1).cuda()
-            pos_encoding = self.pos_encoding_ln(obj_pos_encoding + cand_pos_encoding)
+            # if not args.nerf_pe:
+            #     # object position in candidate views respectively
+            #     obj_pos_encoding = self.obj_pos_proj(obj_bbox)  # (bs, max_cand_len, 8, hidden_size)
+            #     # candidate position relative to current base view
+            #     cand_pos_encoding = self.cand_pos_proj(cand_pos).unsqueeze(2).repeat(1,1,args.top_N_obj,1)
+            # else:
+            #     obj_pos_encoding = obj_bbox.cuda()
+            #     cand_pos_encoding = cand_pos.unsqueeze(2).repeat(1,1,args.top_N_obj,1).cuda()
+            # pos_encoding = self.pos_encoding_ln(obj_pos_encoding + cand_pos_encoding)
 
-            if args.drop_obj:
-                obj_feat = self.obj_dropout(obj_feat)
+            # if args.drop_obj:
+            #     obj_feat = self.obj_dropout(obj_feat)
 
-            obj_action_scores = self.vln_bert(mode, sentence, lang_mask=lang_mask, cand_mask=cand_mask,
-                                             obj_feat=obj_feat.long(), obj_pos_encoding=pos_encoding)
-            return obj_action_scores
+            # calculate matching scores between object tags and the sentence(word)
+            match_score = self.vln_bert(mode, sentence, lang_mask=lang_mask, obj_feat=obj_feat.long(), obj_pos_encoding=None)
+
+            if args.match_type == 'max':
+                match_score = match_score.max(-1).values
+                match_score.masked_fill_(cand_mask, -float('inf'))
+            elif args.match_type == 'mean':
+                match_score = match_score.mean(-1)
+                match_score.masked_fill_(cand_mask, -float('inf'))
+
+            match_score = nn.functional.softmax(match_score)
+            assert not torch.isnan(match_score).any()
+            return match_score
 
         elif mode == 'visual':
 

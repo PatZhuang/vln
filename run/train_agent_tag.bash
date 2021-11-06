@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-nerf-warmup
+name=VLNBERT-train-Prevalent-obj-stgumbel-matchmax-alter
 
 flag="--vlnbert prevalent
 
@@ -20,8 +20,12 @@ flag="--vlnbert prevalent
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
+      --locate_instruction
+      --object
+      --match_type max
+      --st_gumbel
       --apex
-      --nerf_pe"
+      "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name

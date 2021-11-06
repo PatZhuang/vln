@@ -21,7 +21,7 @@ flag="--vlnbert prevalent
       --dropout 0.5
       --apex
       --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
-      --mix_type al
+      --mix_type alpha
       "
 
 mkdir -p snap/$name

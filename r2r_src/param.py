@@ -25,6 +25,10 @@ class Param:
         self.parser.add_argument('--max_pool_feature', type=str, default=None, help='path of the max pooled feature')
         self.parser.add_argument('--look_back_feature', type=str, default=None, help='path of the look-back feature')
         self.parser.add_argument('--mix_type', type=str, default=None, help='max pool feature mix type, [fc, alpha]')
+        self.parser.add_argument("--st_gumbel", action="store_const", default=False, const=True, help="straight through gumbel softmax")
+        self.parser.add_argument('--match_type', type=str, default=None, help='instruction and object tag match type, [max, mean]')
+
+        self.parser.add_argument("--locate_instruction", action="store_const", default=False, const=True)
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
