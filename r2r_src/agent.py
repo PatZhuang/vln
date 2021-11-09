@@ -92,7 +92,7 @@ class Seq2SeqAgent(BaseAgent):
       '<ignore>': (0, 0, 0)  # <ignore>
     }
 
-    def __init__(self, env, results_path, tok, episode_len=20, vit_model=None, vit_args=None, img_process=None):
+    def __init__(self, env, results_path, tok, episode_len=20):
         super(Seq2SeqAgent, self).__init__(env, results_path)
         self.tok = tok
         self.episode_len = episode_len
@@ -111,19 +111,6 @@ class Seq2SeqAgent(BaseAgent):
         self.vln_bert_optimizer = args.optimizer(self.vln_bert.parameters(), lr=args.lr)
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
-
-        # patch vis
-        if args.patchVis:
-            self.vit_args = vit_args
-            self.img_process = img_process
-            self.vit_model = vit_model
-            self.vit_optimizer = args.optimizer(self.vit_model.parameters(), lr=vit_args.lr)
-
-            self.models += [self.vit_model]
-            self.optimizers += [self.vit_optimizer]
-
-            self.env.vit_model = vit_model
-            self.env.img_process = img_process
 
         if args.locate_instruction:
             self.instr_locator = nn.Linear(768, args.maxInput).cuda()
@@ -174,11 +161,7 @@ class Seq2SeqAgent(BaseAgent):
         ''' Extract precomputed features into variable. '''
         features = np.empty((len(obs), args.views, self.feature_size + args.angle_feat_size), dtype=np.float32)
         for i, ob in enumerate(obs):
-            if args.patchVis:
-                # TODO: check
-                pass
-            else:
-                features[i, :, :] = ob['feature']  # Image feat
+            features[i, :, :] = ob['feature']  # Image feat
         return Variable(torch.from_numpy(features), requires_grad=False).cuda()
 
     def _candidate_variable(self, obs):

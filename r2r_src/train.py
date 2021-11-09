@@ -43,19 +43,13 @@ elif args.features == 'raw':
 
 feedback_method = args.feedback  # teacher or sample
 
-if args.patchVis:
-    sys.path.append('../deit')
-    from deit.datasets import build_transform
-    from deit.main import get_args_parser
-    from deit.cait_models import cait_XXS24_224 as cait_model
-
 print(args); print('')
 
 
 ''' train the listener '''
-def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_env=None, vit_model=None, vit_args=None):
+def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_env=None):
     writer = SummaryWriter(log_dir=log_dir)
-    listner = Seq2SeqAgent(train_env, "", tok, args.maxAction, vit_model, vit_args)
+    listner = Seq2SeqAgent(train_env, "", tok, args.maxAction)
 
     record_file = open('./logs/' + args.name + '.txt', 'a')
     record_file.write(str(args) + '\n\n')
@@ -120,7 +114,8 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
             listner.env = env
 
             # Get validation distance from goal under test evaluation conditions
-            listner.test(use_dropout=False, feedback='argmax', iters=None)
+            with torch.no_grad():
+                listner.test(use_dropout=False, feedback='argmax', iters=None)
             result = listner.get_results()
             score_summary, _ = evaluator.score(result)
             loss_str += "{:<11s} | ".format(env_name)
@@ -198,7 +193,7 @@ def setup():
     random.seed(0)
     np.random.seed(0)
 
-def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
+def train_val(test_only=False):
     ''' Train on the training set, and validate on seen and unseen splits. '''
     setup()
     tok = get_tokenizer(args)
@@ -233,7 +228,7 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
     with open(OBJECT_INFO_STORE, 'rb') as f:
         obj_store = pkl.load(f)
 
-    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store, img_process=img_process,
+    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store,
                          mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
     from collections import OrderedDict
 
@@ -244,7 +239,7 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
 
     val_envs = OrderedDict(
         ((split,
-          (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok, obj_store=obj_store, img_process=img_process, mp_feature_store=mp_feat_dict),
+          (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok, obj_store=obj_store, mp_feature_store=mp_feat_dict),
            Evaluation([split], featurized_scans, tok))
           )
          for split in val_env_names
@@ -252,13 +247,13 @@ def train_val(test_only=False, vit_model=None, vit_args=None, img_process=None):
     )
 
     if args.train == 'listener':
-        train(train_env, tok, args.iters, val_envs=val_envs, vit_args=vit_args, vit_model=vit_model)
+        train(train_env, tok, args.iters, val_envs=val_envs)
     elif args.train == 'validlistener':
         valid(train_env, tok, val_envs=val_envs)
     else:
         assert False
 
-def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_process=None):
+def train_val_augment(test_only=False):
     """
     Train the listener with the augmented data
     """
@@ -268,10 +263,7 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
     tok_bert = get_tokenizer(args)
 
     # Load the env img features
-    if args.patchVis:
-        feat_dict = None
-    else:
-        feat_dict = read_img_features(features, test_only=test_only)
+    feat_dict = read_img_features(features, test_only=test_only)
 
     if args.max_pool_feature:
         with open(args.max_pool_feature, 'rb') as f:
@@ -301,51 +293,25 @@ def train_val_augment(test_only=False, vit_model=None, vit_args=None, img_proces
     # Load the augmentation data
     aug_path = args.aug
     # Create the training environment
-    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process,
+    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok_bert, obj_store=obj_store,
                          mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
-    aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[aug_path], tokenizer=tok_bert, name='aug', obj_store=obj_store, img_process=img_process,
+    aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[aug_path], tokenizer=tok_bert, name='aug', obj_store=obj_store,
                          mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
 
     # Setup the validation data
-    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok_bert, obj_store=obj_store, img_process=img_process,
+    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok_bert, obj_store=obj_store,
                                  mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict),
                 Evaluation([split], featurized_scans, tok_bert))
                 for split in val_env_names}
 
     # Start training
-    train(train_env, tok_bert, args.iters, val_envs=val_envs, aug_env=aug_env, vit_model=vit_model, vit_args=vit_args)
+    train(train_env, tok_bert, args.iters, val_envs=val_envs, aug_env=aug_env)
 
 
 if __name__ == "__main__":
-    if args.patchVis:
-        # cait finetune args
-        vit_args = get_args_parser().parse_known_args()[0]
-        vit_args.lr            = 5e-6
-        vit_args.weight_decay  = 0.05
-        vit_args.decay_epochs  = 10
-        vit_args.input_size    = 224   # for XXS24_224
-        vit_args.repeated_aug  = True
-        vit_args.smoothing     = 0.1
-        vit_args.warmup_epochs = 5
-        vit_args.drop_path     = 0.3
-        vit_args.mixup         = 0.8
-        vit_args.cutmix        = 1.0
-
-        img_process = build_transform(True, vit_args)
-
-        vit_model = cait_model(pretrained=True)
-
-        vit_model.norm = torch.nn.Identity()
-        vit_model.head = torch.nn.Linear(vit_model.embed_dim, args.feature_size)
-
-    else:
-        vit_model = None
-        vit_args = None
-        img_process = None
-
     if args.train in ['listener', 'validlistener']:
-        train_val(test_only=args.test_only, vit_model=vit_model, vit_args=vit_args, img_process=img_process)
+        train_val(test_only=args.test_only)
     elif args.train == 'auglistener':
-        train_val_augment(test_only=args.test_only, vit_model=vit_model, vit_args=vit_args, img_process=img_process)
+        train_val_augment(test_only=args.test_only)
     else:
         assert False

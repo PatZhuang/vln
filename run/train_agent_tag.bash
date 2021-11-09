@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-obj-stgumbel-matchmax-alter
+name=VLNBERT-train-Prevalent-obj-test
 
 flag="--vlnbert prevalent
 
@@ -24,8 +24,7 @@ flag="--vlnbert prevalent
       --object
       --match_type max
       --st_gumbel
-      --apex
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=2 python r2r_src/train.py $flag --name $name

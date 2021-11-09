@@ -99,12 +99,11 @@ class EnvBatch():
 class R2RBatch():
     ''' Implements the Room to Room navigation task, using discretized viewpoints and pretrained features '''
 
-    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], tokenizer=None, name=None, obj_store=None, img_process=None,
+    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], tokenizer=None, name=None, obj_store=None,
                  mp_feature_store=None, lb_feature_store=None):
         self.env = EnvBatch(feature_store=feature_store, batch_size=batch_size)
         self.obj_dict = obj_store
         # for vit
-        self.img_process = img_process
         # for max pooled feature
         self.mp_feature = mp_feature_store
         self.lb_feature = lb_feature_store
@@ -302,12 +301,7 @@ class R2RBatch():
                             'distance'   : distance,
                             'idx'        : j + 1,
                         }
-                        if args.patchVis:
-                            adj_dict[loc.viewpointId]['feature'] = visual_feat  # pre-processed image as tensor
-                            adj_dict[loc.viewpointId]['angle_feat'] = angle_feat
-                            # adj_dict[loc.viewpointId]['feature'] = torch.cat((visual_feat, torch.tensor(angle_feat)), -1)
-                        else:
-                            adj_dict[loc.viewpointId]['feature'] = np.concatenate((visual_feat, angle_feat), -1)
+                        adj_dict[loc.viewpointId]['feature'] = np.concatenate((visual_feat, angle_feat), -1)
                         if self.mp_feature is not None:
                             adj_dict[loc.viewpointId]['mp_feature'] = self.mp_feature['_'.join([scanId, loc.viewpointId])]
                         if self.lb_feature is not None and distance == self.lb_feature[scanId][loc.viewpointId][viewpointId]['distance']:
@@ -361,23 +355,7 @@ class R2RBatch():
             base_view_id = state.viewIndex
 
             if feature is None:
-                if args.render_image:
-                    feature = []
-                    for ix in range(36):
-                        if ix == 0:
-                            self.sim.newEpisode([state.scanId], [state.location.viewpointId], [0], [math.radians(-30)])
-                        elif ix % 12 == 0:
-                            self.sim.makeAction([0], [1.0], [1.0])
-                        else:
-                            self.sim.makeAction([0], [1.0], [0])
-
-                        s = self.sim.getState()[0]
-                        assert s.viewIndex == ix
-                        img = Image.fromarray(cv2.cvtColor(np.array(s.rgb), cv2.COLOR_BGR2RGB))
-                        img = self.img_process(img)
-                        feature.append(img)
-                else:
-                    feature = np.zeros((36, 2048))
+                feature = np.zeros((36, 2048))
 
             # Full features
             candidate = self.make_candidate(feature, state.scanId, state.location.viewpointId, state.heading)

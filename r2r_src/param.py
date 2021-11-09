@@ -37,7 +37,7 @@ class Param:
         self.parser.add_argument('--ignoreid', type=int, default=-100)
         self.parser.add_argument('--feature_size', type=int, default=2048)
         self.parser.add_argument("--loadOptim",action="store_const", default=False, const=True)
-        self.parser.add_argument("--patchVis", action="store_const", default=False, const=True)
+        # self.parser.add_argument("--patchVis", action="store_const", default=False, const=True)
         self.parser.add_argument('--top_N_obj', type=int, default=8)
         self.parser.add_argument("--nerf_pe", action="store_const", default=False, const=True)
 

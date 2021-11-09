@@ -1,1 +1,4 @@
 deit/
+.DS_Store
+.*
+.idea

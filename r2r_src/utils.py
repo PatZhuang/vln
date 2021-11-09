@@ -21,10 +21,6 @@ from tqdm import tqdm
 # from multiprocessing import Pool, Manager
 from functools import wraps
 
-if args.patchVis:
-    sys.path.append('../deit')
-    from deit.datasets import build_transform
-
 
 # padding, unknown word, end of sentence
 base_vocab = ['<PAD>', '<UNK>', '<EOS>']
