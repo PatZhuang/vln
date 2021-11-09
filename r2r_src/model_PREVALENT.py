@@ -97,7 +97,7 @@ class VLNBERT(nn.Module):
                 match_score = match_score.mean(-1)
                 match_score.masked_fill_(cand_mask, -float('inf'))
 
-            match_score = nn.functional.softmax(match_score)
+            # match_score = nn.functional.softmax(match_score)
             # assert not torch.isnan(match_score).any()
             return match_score
 

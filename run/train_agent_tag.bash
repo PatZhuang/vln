@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-obj-stmax-test
+name=VLNBERT-train-Prevalent-obj-stmax-add
 
 flag="--vlnbert prevalent
 

@@ -473,14 +473,13 @@ class Seq2SeqAgent(BaseAgent):
                              'cand_lb_feats': candidate_lb_feat}
             h_t, logit = self.vln_bert(**visual_inputs)
 
-            if args.object:
-                logit = logit * obj_instr_match_score
-
             hidden_states.append(h_t)
-
 
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
+
+            if args.object:
+                logit = (logit + obj_instr_match_score) / 2
 
             # Supervised training
             target = self._teacher_action(perm_obs, ended)
