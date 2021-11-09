@@ -33,10 +33,10 @@ class BaseAgent(object):
         self.results_path = results_path
         random.seed(1)
         self.results = {}
-        self.losses = [] # For learning agents
+        self.losses = []  # For learning agents
 
     def write_results(self):
-        output = [{'instr_id':k, 'trajectory': v} for k,v in self.results.items()]
+        output = [{'instr_id': k, 'trajectory': v} for k, v in self.results.items()]
         with open(self.results_path, 'w') as f:
             json.dump(output, f)
 
@@ -50,10 +50,10 @@ class BaseAgent(object):
 
     @staticmethod
     def get_agent(name):
-        return globals()[name+"Agent"]
+        return globals()[name + "Agent"]
 
     def test(self, iters=None, **kwargs):
-        self.env.reset_epoch(shuffle=(iters is not None))   # If iters is not none, shuffle the env batch
+        self.env.reset_epoch(shuffle=(iters is not None))  # If iters is not none, shuffle the env batch
         self.losses = []
         self.results = {}
         # We rely on env showing the entire batch before repeating anything
@@ -65,7 +65,7 @@ class BaseAgent(object):
                 for traj in self.rollout(**kwargs):
                     self.loss = 0
                     self.results[traj['instr_id']] = traj['path']
-        else:   # Do a full round
+        else:  # Do a full round
             while True:
                 for traj in self.rollout(**kwargs):
                     if traj['instr_id'] in self.results:
@@ -82,14 +82,14 @@ class Seq2SeqAgent(BaseAgent):
 
     # For now, the agent can't pick which forward move to make - just the one in the middle
     env_actions = {
-      'left': (0,-1, 0), # left
-      'right': (0, 1, 0), # right
-      'up': (0, 0, 1), # up
-      'down': (0, 0,-1), # down
-      'forward': (1, 0, 0), # forward
-      '<end>': (0, 0, 0), # <end>
-      '<start>': (0, 0, 0), # <start>
-      '<ignore>': (0, 0, 0)  # <ignore>
+        'left': (0, -1, 0),  # left
+        'right': (0, 1, 0),  # right
+        'up': (0, 0, 1),  # up
+        'down': (0, 0, -1),  # down
+        'forward': (1, 0, 0),  # forward
+        '<end>': (0, 0, 0),  # <end>
+        '<start>': (0, 0, 0),  # <start>
+        '<ignore>': (0, 0, 0)  # <ignore>
     }
 
     def __init__(self, env, results_path, tok, episode_len=20):
@@ -112,7 +112,7 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
 
-        if args.locate_instruction:
+        if args.object:
             self.instr_locator = nn.Linear(768, args.maxInput).cuda()
 
             self.models += [self.instr_locator]
@@ -166,12 +166,16 @@ class Seq2SeqAgent(BaseAgent):
 
     def _candidate_variable(self, obs):
         candidate_leng = [len(ob['candidate']) + 1 for ob in obs]  # +1 is for the end
-        candidate_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size + args.angle_feat_size), dtype=np.float32)
+        candidate_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size + args.angle_feat_size),
+                                  dtype=np.float32)
         if args.object:
             candidate_obj_class = np.zeros((len(obs), max(candidate_leng), args.top_N_obj), dtype=np.float32)
             if args.nerf_pe:
-                candidate_pos = np.zeros((len(obs), max(candidate_leng), self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
-                candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, self.vln_bert.vln_bert.config.hidden_size), dtype=np.float32)
+                candidate_pos = np.zeros((len(obs), max(candidate_leng), self.vln_bert.vln_bert.config.hidden_size),
+                                         dtype=np.float32)
+                candidate_obj_bbox = np.zeros(
+                    (len(obs), max(candidate_leng), args.top_N_obj, self.vln_bert.vln_bert.config.hidden_size),
+                    dtype=np.float32)
             else:
                 candidate_pos = np.zeros((len(obs), max(candidate_leng), 4), dtype=np.float32)
                 candidate_obj_bbox = np.zeros((len(obs), max(candidate_leng), args.top_N_obj, 4), dtype=np.float32)
@@ -190,23 +194,27 @@ class Seq2SeqAgent(BaseAgent):
                     candidate_obj_class[i, j, :] = cc['obj_info']['obj_class']
                     if args.nerf_pe:
                         candidate_obj_bbox[i, j, :] = np.array([[[[math.sin(2 ** L * math.pi * bbox[0]),
-                                                                 math.sin(2 ** L * math.pi * bbox[0]),
-                                                                 math.sin(2 ** L * math.pi * bbox[1]),
-                                                                 math.sin(2 ** L * math.pi * bbox[1]),
-                                                                 math.sin(2 ** L * math.pi * bbox[2]),
-                                                                 math.sin(2 ** L * math.pi * bbox[2]),
-                                                                 math.sin(2 ** L * math.pi * bbox[3]),
-                                                                 math.sin(2 ** L * math.pi * bbox[3]),
-                                                                 ] for L in range(8)] * (self.vln_bert.vln_bert.config.hidden_size // 64)]
-                                                                for bbox in cc['obj_info']['bbox']]).reshape(candidate_obj_bbox.shape[-2:])
+                                                                   math.sin(2 ** L * math.pi * bbox[0]),
+                                                                   math.sin(2 ** L * math.pi * bbox[1]),
+                                                                   math.sin(2 ** L * math.pi * bbox[1]),
+                                                                   math.sin(2 ** L * math.pi * bbox[2]),
+                                                                   math.sin(2 ** L * math.pi * bbox[2]),
+                                                                   math.sin(2 ** L * math.pi * bbox[3]),
+                                                                   math.sin(2 ** L * math.pi * bbox[3]),
+                                                                   ] for L in range(8)] * (
+                                                                             self.vln_bert.vln_bert.config.hidden_size // 64)]
+                                                                for bbox in cc['obj_info']['bbox']]).reshape(
+                            candidate_obj_bbox.shape[-2:])
                         candidate_pos[i, j, :] = np.array([[math.sin(2 ** L * math.pi * cc['heading']),
-                                                           math.cos(2 ** L * math.pi * cc['heading']),
-                                                           math.sin(2 ** L * math.pi * cc['elevation']),
-                                                           math.cos(2 ** L * math.pi * cc['elevation'])]
-                                                           for L in range(4)] * (self.vln_bert.vln_bert.config.hidden_size // 16)).flatten()
+                                                            math.cos(2 ** L * math.pi * cc['heading']),
+                                                            math.sin(2 ** L * math.pi * cc['elevation']),
+                                                            math.cos(2 ** L * math.pi * cc['elevation'])]
+                                                           for L in range(4)] * (
+                                                                      self.vln_bert.vln_bert.config.hidden_size // 16)).flatten()
                     else:
                         candidate_obj_bbox[i, j, :] = cc['obj_info']['bbox']
-                        candidate_pos[i, j, :] = cc['feature'][args.feature_size:args.feature_size+4] # [sin(heading), cos(heading), sin(elev), cos(elev)]
+                        candidate_pos[i, j, :] = cc['feature'][
+                                                 args.feature_size:args.feature_size + 4]  # [sin(heading), cos(heading), sin(elev), cos(elev)]
                 if args.max_pool_feature:
                     candidate_mp_feat[i, j, :] = cc['mp_feature']
                 if args.look_back_feature:
@@ -228,7 +236,7 @@ class Seq2SeqAgent(BaseAgent):
         return candidate_variable
 
     def _get_obj_input(self, obs):
-        candidates = [ob['candidate'] for ob in obs]    # (bs, cand_len)
+        candidates = [ob['candidate'] for ob in obs]  # (bs, cand_len)
 
     def get_input_feat(self, obs):
         input_a_t = np.zeros((len(obs), args.angle_feat_size), np.float32)
@@ -248,7 +256,7 @@ class Seq2SeqAgent(BaseAgent):
         }
         if args.object:
             input_feat.update({
-                'cand_pos' : candidate_variable['candidate_pos'],
+                'cand_pos': candidate_variable['candidate_pos'],
                 'obj_feat': candidate_variable['candidate_obj_class'],
                 'obj_bbox': candidate_variable['candidate_obj_bbox']
             })
@@ -268,15 +276,15 @@ class Seq2SeqAgent(BaseAgent):
         """
         a = np.zeros(len(obs), dtype=np.int64)
         for i, ob in enumerate(obs):
-            if ended[i]:                                            # Just ignore this index
+            if ended[i]:  # Just ignore this index
                 a[i] = args.ignoreid
             else:
                 for k, candidate in enumerate(ob['candidate']):
-                    if candidate['viewpointId'] == ob['teacher']:   # Next view point
+                    if candidate['viewpointId'] == ob['teacher']:  # Next view point
                         a[i] = k
                         break
-                else:   # Stop here
-                    assert ob['teacher'] == ob['viewpoint']         # The teacher action should be "STAY HERE"
+                else:  # Stop here
+                    assert ob['teacher'] == ob['viewpoint']  # The teacher action should be "STAY HERE"
                     a[i] = len(ob['candidate'])
         return torch.from_numpy(a).cuda()
 
@@ -359,15 +367,15 @@ class Seq2SeqAgent(BaseAgent):
 
         # Language input
         sentence, language_attention_mask, token_type_ids, \
-            seq_lengths, perm_idx = self._sort_batch(obs)
+        seq_lengths, perm_idx = self._sort_batch(obs)
         perm_obs = obs[perm_idx]
 
         ''' Language BERT '''
-        language_inputs = {'mode':        'language',
-                        'sentence':       sentence,
-                        'attention_mask': language_attention_mask,
-                        'lang_mask':      language_attention_mask,
-                        'token_type_ids': token_type_ids}
+        language_inputs = {'mode': 'language',
+                           'sentence': sentence,
+                           'attention_mask': language_attention_mask,
+                           'lang_mask': language_attention_mask,
+                           'token_type_ids': token_type_ids}
         if args.vlnbert == 'oscar':
             language_features = self.vln_bert(**language_inputs)
         elif args.vlnbert == 'prevalent':
@@ -382,7 +390,7 @@ class Seq2SeqAgent(BaseAgent):
         # Init the reward shaping
         last_dist = np.zeros(batch_size, np.float32)
         last_ndtw = np.zeros(batch_size, np.float32)
-        for i, ob in enumerate(perm_obs):   # The init distance from the view point to the target
+        for i, ob in enumerate(perm_obs):  # The init distance from the view point to the target
             last_dist[i] = ob['distance']
             path_act = [vp[0] for vp in traj[i]['path']]
             last_ndtw[i] = self.ndtw_criterion[ob['scan']](path_act, ob['gt_path'], metric='ndtw')
@@ -404,39 +412,22 @@ class Seq2SeqAgent(BaseAgent):
             candidate_feat = input_feat['cand_feat']
             candidate_leng = input_feat['cand_leng']
 
+            # Mask outputs where agent can't move forward
+            candidate_mask = utils.length2mask(candidate_leng)
+
             if args.object:
-                candidate_pos  = input_feat['cand_pos']
+                candidate_pos = input_feat['cand_pos']
                 object_feat = input_feat['obj_feat']
                 object_bbox = input_feat['obj_bbox']
 
-            if args.max_pool_feature:
-                candidate_mp_feat = input_feat['candidate_mp_feat']
-            else:
-                candidate_mp_feat = None
-
-            # locate instruction
-            if args.locate_instruction:
+                # locate instruction
                 instr_attn_prob = self.instr_locator(h_t)
                 instr_mask = utils.length2mask([sl.item() for sl in seq_lengths], size=args.maxInput)
                 instr_attn_prob.masked_fill_(instr_mask, -float('inf'))
                 instr_attn_weight = gumbel_softmax(instr_attn_prob, tau=0.1, hard=args.st_gumbel)
                 assert not torch.isnan(instr_attn_weight).any()
                 sampled_instr = torch.sum((token_embeds * instr_attn_weight.unsqueeze(-1)), 1).unsqueeze(1)
-            else:
-                sampled_instr = language_features
 
-            if args.look_back_feature:
-                candidate_lb_feat = input_feat['candidate_lb_feat']
-            else:
-                candidate_lb_feat = None
-
-            # the first [CLS] token, initialized by the language BERT, serves
-            # as the agent's state passing through time steps
-            if (t >= 1) or (args.vlnbert=='prevalent'):
-                language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
-
-            candidate_mask = utils.length2mask(candidate_leng)
-            if args.object:
                 '''Object BERT'''
                 object_inputs = {
                     'mode': 'object',
@@ -449,25 +440,37 @@ class Seq2SeqAgent(BaseAgent):
                 }
 
                 obj_instr_match_score = self.vln_bert(**object_inputs)
+
+            if args.max_pool_feature:
+                candidate_mp_feat = input_feat['candidate_mp_feat']
             else:
-                obj_instr_match_score = 1
+                candidate_mp_feat = None
+
+            if args.look_back_feature:
+                candidate_lb_feat = input_feat['candidate_lb_feat']
+            else:
+                candidate_lb_feat = None
+
+            # the first [CLS] token, initialized by the language BERT, serves
+            # as the agent's state passing through time steps
+            if (t >= 1) or (args.vlnbert == 'prevalent'):
+                language_features = torch.cat((h_t.unsqueeze(1), language_features[:, 1:, :]), dim=1)
 
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
 
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''
-            visual_inputs = {'mode':              'visual',
-                            'sentence':           language_features,
-                            'attention_mask':     visual_attention_mask,
-                            'lang_mask':          language_attention_mask,
-                            'vis_mask':           visual_temp_mask,
-                            'token_type_ids':     token_type_ids,
-                            'action_feats':       input_a_t,
-                            # 'pano_feats':         f_t,
-                            'cand_feats':         candidate_feat,
-                            'cand_mp_feats':      candidate_mp_feat,
-                            'cand_lb_feats':      candidate_lb_feat}
+            visual_inputs = {'mode': 'visual',
+                             'sentence': language_features,
+                             'attention_mask': visual_attention_mask,
+                             'lang_mask': language_attention_mask,
+                             'vis_mask': visual_temp_mask,
+                             'token_type_ids': token_type_ids,
+                             'action_feats': input_a_t,
+                             'cand_feats': candidate_feat,
+                             'cand_mp_feats': candidate_mp_feat,
+                             'cand_lb_feats': candidate_lb_feat}
             h_t, logit = self.vln_bert(**visual_inputs)
 
             if args.object:
@@ -475,9 +478,8 @@ class Seq2SeqAgent(BaseAgent):
 
             hidden_states.append(h_t)
 
-            # Mask outputs where agent can't move forward
-            # Here the logit is [b, max_candidate]
 
+            # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
 
             # Supervised training
@@ -486,17 +488,17 @@ class Seq2SeqAgent(BaseAgent):
 
             # Determine next model inputs
             if self.feedback == 'teacher':
-                a_t = target                 # teacher forcing
+                a_t = target  # teacher forcing
             elif self.feedback == 'argmax':
-                _, a_t = logit.max(1)        # student forcing - argmax
+                _, a_t = logit.max(1)  # student forcing - argmax
                 a_t = a_t.detach()
-                log_probs = F.log_softmax(logit, 1)                              # Calculate the log_prob here
-                policy_log_probs.append(log_probs.gather(1, a_t.unsqueeze(1)))   # Gather the log_prob for each batch
+                log_probs = F.log_softmax(logit, 1)  # Calculate the log_prob here
+                policy_log_probs.append(log_probs.gather(1, a_t.unsqueeze(1)))  # Gather the log_prob for each batch
             elif self.feedback == 'sample':
                 probs = F.softmax(logit, 1)  # sampling an action from model
                 c = torch.distributions.Categorical(probs)
-                self.logs['entropy'].append(c.entropy().sum().item())            # For log
-                entropys.append(c.entropy())                                     # For optimization
+                self.logs['entropy'].append(c.entropy().sum().item())  # For log
+                entropys.append(c.entropy())  # For optimization
                 a_t = c.sample().detach()
                 policy_log_probs.append(c.log_prob(a_t))
             else:
@@ -506,13 +508,13 @@ class Seq2SeqAgent(BaseAgent):
             # NOTE: Env action is in the perm_obs space
             cpu_a_t = a_t.cpu().numpy()
             for i, next_id in enumerate(cpu_a_t):
-                if next_id == (candidate_leng[i]-1) or next_id == args.ignoreid or ended[i]:    # The last action is <end>
-                    cpu_a_t[i] = -1             # Change the <end> and ignore action to -1
+                if next_id == (candidate_leng[i] - 1) or next_id == args.ignoreid or ended[i]:  # The last action is <end>
+                    cpu_a_t[i] = -1  # Change the <end> and ignore action to -1
 
             # Make action and get the new state
             self.make_equiv_action(cpu_a_t, perm_obs, perm_idx, traj)
             obs = np.array(self.env._get_obs())
-            perm_obs = obs[perm_idx]            # Perm the obs for the resu
+            perm_obs = obs[perm_idx]  # Perm the obs for the resu
 
             if train_rl:
                 # Calculate the mask and reward
@@ -531,23 +533,23 @@ class Seq2SeqAgent(BaseAgent):
                     else:
                         action_idx = cpu_a_t[i]
                         # Target reward
-                        if action_idx == -1:                              # If the action now is end
-                            if dist[i] < 3.0:                             # Correct
+                        if action_idx == -1:  # If the action now is end
+                            if dist[i] < 3.0:  # Correct
                                 reward[i] = 2.0 + ndtw_score[i] * 2.0
-                            else:                                         # Incorrect
+                            else:  # Incorrect
                                 reward[i] = -2.0
-                        else:                                             # The action is not end
+                        else:  # The action is not end
                             # Path fidelity rewards (distance & nDTW)
                             reward[i] = - (dist[i] - last_dist[i])
                             ndtw_reward = ndtw_score[i] - last_ndtw[i]
-                            if reward[i] > 0.0:                           # Quantification
+                            if reward[i] > 0.0:  # Quantification
                                 reward[i] = 1.0 + ndtw_reward
                             elif reward[i] < 0.0:
                                 reward[i] = -1.0 + ndtw_reward
                             else:
                                 raise NameError("The action doesn't change the move")
                             # Miss the target penalty
-                            if (last_dist[i] <= 1.0) and (dist[i]-last_dist[i] > 0.0):
+                            if (last_dist[i] <= 1.0) and (dist[i] - last_dist[i] > 0.0):
                                 reward[i] -= (1.0 - last_dist[i]) * 2.0
                 rewards.append(reward)
                 masks.append(mask)
@@ -579,7 +581,7 @@ class Seq2SeqAgent(BaseAgent):
             else:
                 candidate_lb_feat = None
 
-            language_features = torch.cat((h_t.unsqueeze(1), language_features[:,1:,:]), dim=1)
+            language_features = torch.cat((h_t.unsqueeze(1), language_features[:, 1:, :]), dim=1)
 
             candidate_mask = utils.length2mask(candidate_leng)
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
@@ -587,32 +589,32 @@ class Seq2SeqAgent(BaseAgent):
 
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''
-            visual_inputs = {'mode':              'visual',
-                            'sentence':           language_features,
-                            'attention_mask':     visual_attention_mask,
-                            'lang_mask':          language_attention_mask,
-                            'vis_mask':           visual_temp_mask,
-                            'token_type_ids':     token_type_ids,
-                            'action_feats':       input_a_t,
-                            # 'pano_feats':         f_t,
-                            'cand_feats':         candidate_feat,
-                            'cand_mp_feats':      candidate_mp_feat,
-                            'cand_lb_feats':      candidate_lb_feat}
+            visual_inputs = {'mode': 'visual',
+                             'sentence': language_features,
+                             'attention_mask': visual_attention_mask,
+                             'lang_mask': language_attention_mask,
+                             'vis_mask': visual_temp_mask,
+                             'token_type_ids': token_type_ids,
+                             'action_feats': input_a_t,
+                             # 'pano_feats':         f_t,
+                             'cand_feats': candidate_feat,
+                             'cand_mp_feats': candidate_mp_feat,
+                             'cand_lb_feats': candidate_lb_feat}
             last_h_, _ = self.vln_bert(**visual_inputs)
 
             rl_loss = 0.
 
             # NOW, A2C!!!
             # Calculate the final discounted reward
-            last_value__ = self.critic(last_h_).detach()        # The value esti of the last state, remove the grad for safety
+            last_value__ = self.critic(last_h_).detach()  # The value esti of the last state, remove the grad for safety
             discount_reward = np.zeros(batch_size, np.float32)  # The inital reward is zero
             for i in range(batch_size):
-                if not ended[i]:        # If the action is not ended, use the value function as the last reward
+                if not ended[i]:  # If the action is not ended, use the value function as the last reward
                     discount_reward[i] = last_value__[i]
 
             length = len(rewards)
             total = 0
-            for t in range(length-1, -1, -1):
+            for t in range(length - 1, -1, -1):
                 discount_reward = discount_reward * args.gamma + rewards[t]  # If it ended, the reward will be 0
                 mask_ = Variable(torch.from_numpy(masks[t]), requires_grad=False).cuda()
                 clip_reward = discount_reward.copy()
@@ -692,8 +694,6 @@ class Seq2SeqAgent(BaseAgent):
 
         for opt in self.optimizers:
             opt.step()
-        # self.vln_bert_optimizer.step()
-        # self.critic_optimizer.step()
 
     def train(self, n_iters, feedback='teacher', **kwargs):
         ''' Train for a given number of iterations '''
@@ -701,8 +701,6 @@ class Seq2SeqAgent(BaseAgent):
 
         for model in self.models:
             model.train()
-        # self.vln_bert.train()
-        # self.critic.train()
 
         self.losses = []
         for iter in range(1, n_iters + 1):
@@ -725,15 +723,9 @@ class Seq2SeqAgent(BaseAgent):
                 assert False
 
             self.optim_step()
-            # self.loss.backward()
-            #
-            # torch.nn.utils.clip_grad_norm(self.vln_bert.parameters(), 40.)
-            #
-            # self.vln_bert_optimizer.step()
-            # self.critic_optimizer.step()
 
             if args.aug is None:
-                print_progress(iter, n_iters+1, prefix='Progress:', suffix='Complete', bar_length=50)
+                print_progress(iter, n_iters + 1, prefix='Progress:', suffix='Complete', bar_length=50)
 
         for sch in self.schedulers:
             sch.step()
@@ -744,12 +736,14 @@ class Seq2SeqAgent(BaseAgent):
         the_dir, _ = os.path.split(path)
         os.makedirs(the_dir, exist_ok=True)
         states = {}
+
         def create_state(name, model, optimizer):
             states[name] = {
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
             }
+
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer),
                      ("critic", self.critic, self.critic_optimizer)]
         for param in all_tuple:
@@ -770,6 +764,7 @@ class Seq2SeqAgent(BaseAgent):
             model.load_state_dict(state)
             if args.loadOptim:
                 optimizer.load_state_dict(states[name]['optimizer'])
+
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer),
                      ("critic", self.critic, self.critic_optimizer)]
         for param in all_tuple:

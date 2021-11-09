@@ -434,45 +434,11 @@ class VLNBert(BertPreTrainedModel):
             # object tag embedding
             obj_feat_shape = obj_feat.shape
             obj_feat = obj_feat.view(obj_feat_shape[0], -1) # (bs, max_cand_len * top_N_obj)
-            # obj_embeds = self.embeddings(obj_feat, position_ids=torch.zeros_like(obj_feat))  # (bs, max_cand_len * top_N_obj, hidden_size)
             obj_embeds = self.token_embedding(obj_feat)
-            # obj_pos_encoding = obj_pos_encoding.view(obj_embeds.shape)
-            # obj_pos_encoding[obj_embeds == 0] = 0    # to correspond to dropout of obj_embedding
-            # obj_embeds = obj_embeds + obj_pos_encoding
-
-            # obj_mask = cand_mask.repeat_interleave(obj_feat_shape[-1], 1)
-            # obj_mask = obj_mask.unsqueeze(1).unsqueeze(2)
-            # obj_mask = obj_mask.to(dtype=next(self.parameters()).dtype)
-            # obj_mask = obj_mask * -10000.0
 
             # calculate cosine similarity
             similarity = torch.cosine_similarity(input_ids, obj_embeds, dim=2)
             match_score = similarity.view(obj_feat_shape)    # (bs, max_cand, top_N_obj)
-
-            # # for layer_module in self.lalayer:
-            # #     temp_output = layer_module(obj_embeds, obj_mask)
-            # #     obj_embeds = temp_output[0]
-            #
-            # obj_output = obj_embeds
-            # lang_output = input_ids
-            #
-            # text_mask = lang_mask
-            # text_mask = text_mask.unsqueeze(1).unsqueeze(2)
-            # text_mask = text_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
-            # text_mask = text_mask * -10000.0
-            #
-            # # output shape: (bs, max_cand * top_N_obj, hidden_size)
-            # # language_attention_scores shape: (bs, num_attention_head, maxInput - 1)
-            # # obj_attention_scores shape: (bs, num_attention_head, max_cand_len * top_N_obj)
-            # for tdx, layer_module in enumerate(self.ollayer):
-            #     lang_output, obj_output, language_attention_scores, obj_attention_scores = layer_module(
-            #         lang_output, text_mask, obj_output, obj_mask, tdx
-            #     )
-            #
-            # obj_action_scores = obj_attention_scores.view(obj_feat_shape[0], -1, obj_feat_shape[1], obj_feat_shape[2])
-            # # mean for multi-heads then mean for multi-objects
-            # obj_action_scores = obj_action_scores.mean(dim=1).mean(dim=-1)  # (bs, max_cand_len)
-            # # obj_action_scores = self.obj_SM(obj_action_scores)
 
             return match_score
 

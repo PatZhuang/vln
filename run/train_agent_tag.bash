@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-obj-test
+name=VLNBERT-train-Prevalent-obj-stmax-test
 
 flag="--vlnbert prevalent
 
@@ -20,11 +20,10 @@ flag="--vlnbert prevalent
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
-      --locate_instruction
       --object
       --match_type max
       --st_gumbel
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=2 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name

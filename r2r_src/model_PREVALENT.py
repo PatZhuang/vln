@@ -88,20 +88,6 @@ class VLNBERT(nn.Module):
             return init_state, encoded_sentence, token_embeds
 
         if mode == 'object':
-            # if not args.nerf_pe:
-            #     # object position in candidate views respectively
-            #     obj_pos_encoding = self.obj_pos_proj(obj_bbox)  # (bs, max_cand_len, 8, hidden_size)
-            #     # candidate position relative to current base view
-            #     cand_pos_encoding = self.cand_pos_proj(cand_pos).unsqueeze(2).repeat(1,1,args.top_N_obj,1)
-            # else:
-            #     obj_pos_encoding = obj_bbox.cuda()
-            #     cand_pos_encoding = cand_pos.unsqueeze(2).repeat(1,1,args.top_N_obj,1).cuda()
-            # pos_encoding = self.pos_encoding_ln(obj_pos_encoding + cand_pos_encoding)
-
-            # if args.drop_obj:
-            #     obj_feat = self.obj_dropout(obj_feat)
-
-            # calculate matching scores between object tags and the sentence(word)
             match_score = self.vln_bert(mode, sentence, lang_mask=lang_mask, obj_feat=obj_feat.long(), obj_pos_encoding=None)
 
             if args.match_type == 'max':
@@ -112,7 +98,7 @@ class VLNBERT(nn.Module):
                 match_score.masked_fill_(cand_mask, -float('inf'))
 
             match_score = nn.functional.softmax(match_score)
-            assert not torch.isnan(match_score).any()
+            # assert not torch.isnan(match_score).any()
             return match_score
 
         elif mode == 'visual':
