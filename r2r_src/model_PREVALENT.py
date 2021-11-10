@@ -108,34 +108,27 @@ class VLNBERT(nn.Module):
             state_with_action = self.action_LayerNorm(state_with_action)
             state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:,1:,:]), dim=1)
 
-            if cand_mp_feats is not None and cand_lb_feats is None:
-                if args.mix_type == 'fc':
-                    cand_feats[..., :-args.angle_feat_size] = self.feat_cat_fc(
-                        torch.cat((cand_feats[..., :-args.angle_feat_size], cand_mp_feats), -1)
-                    )
-                elif args.mix_type == 'alpha':
-                    cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha[0] * cand_mp_feats
-            elif cand_lb_feats is not None and cand_mp_feats is None:
-                if args.mix_type == 'fc':
-                    cand_feats[..., :-args.angle_feat_size] = self.feat_cat_fc(
-                        torch.cat((cand_feats[..., :-args.angle_feat_size], cand_lb_feats), -1)
-                    )
-                elif args.mix_type == 'alpha':
-                    cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha[0] * cand_lb_feats
-            elif cand_lb_feats is not None and cand_mp_feats is not None:
-                if args.mix_type == 'fc':
-                    cand_feats[..., :-args.angle_feat_size] = self.feat_cat_fc(
-                        torch.cat((cand_feats[..., :-args.angle_feat_size], cand_lb_feats, cand_mp_feats), -1)
-                    )
-                elif args.mix_type == 'alpha':
-                    cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha[0] * cand_mp_feats + self.feat_cat_alpha[1] * cand_lb_feats
-
+            cand_feats_clone = cand_feats.clone()
 
             cand_feats[..., :-args.angle_feat_size] = self.drop_env(cand_feats[..., :-args.angle_feat_size])
 
             # logit is the attention scores over the candidate features
             h_t, logit, attended_language, attended_visual = self.vln_bert(mode, state_feats,
-                attention_mask=attention_mask, lang_mask=lang_mask, vis_mask=vis_mask, img_feats=cand_feats)
+                                                                           attention_mask=attention_mask,
+                                                                           lang_mask=lang_mask, vis_mask=vis_mask,
+                                                                           img_feats=cand_feats)
+
+            if cand_mp_feats is not None:
+                if args.mix_type == 'alpha':
+                    mix_cand_feats = cand_feats_clone
+                    mix_cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha[0] * cand_mp_feats
+                    mix_cand_feats[..., :-args.angle_feat_size] = self.drop_env(mix_cand_feats[..., :-args.angle_feat_size])
+                    # logit is the attention scores over the candidate features
+                    h_t, mp_logit, attended_language, attended_visual = self.vln_bert(mode, state_feats,
+                                                                                   attention_mask=attention_mask,
+                                                                                   lang_mask=lang_mask,
+                                                                                   vis_mask=vis_mask,
+                                                                                   img_feats=mix_cand_feats)
 
             # update agent's state, unify history, language and vision by elementwise product
             vis_lang_feat = self.vis_lang_LayerNorm(attended_language * attended_visual)
@@ -143,7 +136,10 @@ class VLNBERT(nn.Module):
             state_proj = self.state_proj(state_output)
             state_proj = self.state_LayerNorm(state_proj)
 
-            return state_proj, logit
+            if cand_mp_feats is not None:
+                return state_proj, (logit, mp_logit)
+            else:
+                return state_proj, logit
 
         else:
             ModuleNotFoundError

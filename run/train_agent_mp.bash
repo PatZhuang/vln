@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-maxpool-alpha-new
+name=VLNBERT-train-Prevalent-maxpool-alpha-klloss
 
 flag="--vlnbert prevalent
 
@@ -25,4 +25,4 @@ flag="--vlnbert prevalent
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name
