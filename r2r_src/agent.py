@@ -133,7 +133,6 @@ class Seq2SeqAgent(BaseAgent):
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, size_average=False)
         self.ndtw_criterion = utils.ndtw_initialize()
-        self.kld_criterion = nn.KLDivLoss(reduction='sum')
 
         # Logs
         sys.stdout.flush()
@@ -406,7 +405,6 @@ class Seq2SeqAgent(BaseAgent):
         masks = []
         entropys = []
         ml_loss = 0.
-        kl_loss = 0.
 
         for t in range(self.episode_len):
             input_feat = self.get_input_feat(perm_obs)
@@ -470,31 +468,19 @@ class Seq2SeqAgent(BaseAgent):
                              'cand_mp_feats': candidate_mp_feat,
                              }
 
-            if not args.max_pool_feature:
-                h_t, logit = self.vln_bert(**visual_inputs)
-                # Here the logit is [b, max_candidate]
-                logit.masked_fill_(candidate_mask, -float('inf'))
+            h_t, logit = self.vln_bert(**visual_inputs)
+            # Here the logit is [b, max_candidate]
+            logit.masked_fill_(candidate_mask, -float('inf'))
 
-                if args.object:
-                    logit = (logit + obj_instr_match_score) / 2
-            else:
-                h_t, (logit, mp_logit) = self.vln_bert(**visual_inputs)
-                # Here the logit is [b, max_candidate]
-                logit.masked_fill_(candidate_mask, -float('inf'))
-                mp_logit.masked_fill_(candidate_mask, -float('inf'))
-                kl_loss += self.kld_criterion(F.log_softmax(logit), F.softmax(mp_logit)) * 100
-
-                if args.object:
-                    mp_logit = (mp_logit + obj_instr_match_score) / 2
+            if args.object:
+                logit = (logit + obj_instr_match_score) / 2
 
             hidden_states.append(h_t)
 
-
             # Supervised training
             target = self._teacher_action(perm_obs, ended)
+            ml_loss += self.criterion(logit, target)
             if args.max_pool_feature and self.feedback != 'argmax':
-                ml_loss += self.criterion(mp_logit, target)
-            else:
                 ml_loss += self.criterion(logit, target)
 
             # Determine next model inputs
@@ -507,7 +493,7 @@ class Seq2SeqAgent(BaseAgent):
                 policy_log_probs.append(log_probs.gather(1, a_t.unsqueeze(1)))  # Gather the log_prob for each batch
             elif self.feedback == 'sample':
                 if args.max_pool_feature:
-                    probs = F.softmax(mp_logit, 1)  # sampling an action from model
+                    probs = F.softmax(logit, 1)  # sampling an action from model
                 else:
                     probs = F.softmax(logit, 1)  # sampling an action from model
                 c = torch.distributions.Categorical(probs)
@@ -659,10 +645,6 @@ class Seq2SeqAgent(BaseAgent):
         if train_ml is not None:
             self.loss += ml_loss * train_ml / batch_size
             self.logs['IL_loss'].append((ml_loss * train_ml / batch_size).item())
-
-        if args.max_pool_feature:
-            self.loss += kl_loss / batch_size
-            self.logs['KL_loss'].append((kl_loss / batch_size).item())
 
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)
