@@ -29,6 +29,12 @@ class Param:
         self.parser.add_argument('--match_type', type=str, default='max', help='instruction and object tag match type, [max, mean]')
         # self.parser.add_argument("--locate_instruction", action="store_const", default=False, const=True)
 
+        self.parser.add_argument('--lr_adjust_type', type=str, default=None, help='learning rate adjust type')
+        self.parser.add_argument("--warm_steps", type=int, default=2000)
+        self.parser.add_argument("--decay_start", type=int, default=4000)
+        self.parser.add_argument("--decay_intervals", type=int, default=2000)
+        self.parser.add_argument("--lr_decay", type=float, default=0.2)
+
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
         self.parser.add_argument('--maxAction', type=int, default=15, help='Max Action sequence')

@@ -23,6 +23,7 @@ import model_OSCAR, model_PREVALENT
 import param
 from param import args
 from collections import defaultdict
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 
 
 class BaseAgent(object):
@@ -120,9 +121,36 @@ class Seq2SeqAgent(BaseAgent):
             self.instr_locator_optimizer = torch.optim.SGD(self.instr_locator.parameters(), lr=1e-4)
             self.optimizers += [self.instr_locator_optimizer]
 
-        warm_up_with_cosine_lr = lambda epoch: epoch / args.warm_up_epochs if epoch <= args.warm_up_epochs else 0.5 * (
-                math.cos(
-                    (epoch - args.warm_up_epochs) / (args.iters // args.log_every - args.warm_up_epochs) * math.pi) + 1)
+        def lr_lambda_DASA(iter_count):
+            decay_intervals = args.decay_intervals
+            if args.warm_steps > 0 and iter_count < args.warm_steps:
+                alpha = (1.0 + iter_count) / args.warm_steps
+            elif iter_count < args.decay_start:
+                alpha = 1.0
+            else:
+                alpha = args.lr_decay ** ((iter_count - args.decay_start) // (decay_intervals))
+            return alpha
+
+        if args.lr_adjust_type == 'DASA':
+
+            self.schedulers = [
+                torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda_DASA)
+                for opt in self.optimizers
+            ]
+        else:
+            self.schedulers = [
+                CosineAnnealingWarmupRestarts(opt,
+                                              first_cycle_steps=20,
+                                              warmup_steps=5,
+                                              max_lr=args.lr,
+                                              min_lr=1e-7,
+                                              cycle_mult=2)
+                for opt in self.optimizers
+            ]
+
+        warm_up_with_cosine_lr = lambda iters: (iters // args.log_every) / args.warm_up_epochs if (iters // args.log_every) <= args.warm_up_epochs else \
+            0.5 * (1.0 + math.cos(
+                (iters // args.log_every - args.warm_up_epochs) / (args.iters // args.log_every - args.warm_up_epochs) * math.pi))
         self.schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda=warm_up_with_cosine_lr) for opt in
                            self.optimizers]
 
@@ -730,6 +758,7 @@ class Seq2SeqAgent(BaseAgent):
         for sch in self.schedulers:
             sch.step()
             lr = sch.get_last_lr()
+        self.logs['loss/lr'].append(lr[-1])
 
     def save(self, epoch, path):
         ''' Snapshot models '''
