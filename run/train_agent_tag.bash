@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-obj-stmax-add
+name=VLNBERT-train-Prevalent-obj-stmax-add-bs16
 
 flag="--vlnbert prevalent
 
@@ -9,7 +9,7 @@ flag="--vlnbert prevalent
 
       --features places365
       --maxAction 15
-      --batchSize 8
+      --batchSize 16
       --feedback sample
       --lr 1e-5
       --iters 300000
@@ -26,4 +26,4 @@ flag="--vlnbert prevalent
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name

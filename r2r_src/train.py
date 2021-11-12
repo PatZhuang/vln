@@ -92,6 +92,7 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
                 listner.train(1, feedback=feedback_method)
 
                 print_progress(jdx, jdx_length, prefix='Progress:', suffix='Complete', bar_length=50)
+        listner.adjust_lr()
 
         # Log the training stats to tensorboard
         total = max(sum(listner.logs['total']), 1)

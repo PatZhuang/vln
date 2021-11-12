@@ -99,6 +99,8 @@ class Seq2SeqAgent(BaseAgent):
         self.episode_len = episode_len
         self.feature_size = self.env.feature_size
 
+        self.input_indexes = torch.arange(0, args.maxInput).cuda()
+
         # Models
         if args.vlnbert == 'oscar':
             self.vln_bert = model_OSCAR.VLNBERT(feature_size=self.feature_size + args.angle_feat_size).cuda()
@@ -121,14 +123,14 @@ class Seq2SeqAgent(BaseAgent):
             self.instr_locator_optimizer = torch.optim.SGD(self.instr_locator.parameters(), lr=1e-4)
             self.optimizers += [self.instr_locator_optimizer]
 
-        def lr_lambda_DASA(iter_count):
+        def lr_lambda_DASA(epoch):
             decay_intervals = args.decay_intervals
-            if args.warm_steps > 0 and iter_count < args.warm_steps:
-                alpha = (1.0 + iter_count) / args.warm_steps
-            elif iter_count < args.decay_start:
+            if args.warm_steps > 0 and epoch <= args.warm_steps:
+                alpha = (1.0 + epoch) / args.warm_steps
+            elif epoch < args.decay_start:
                 alpha = 1.0
             else:
-                alpha = args.lr_decay ** ((iter_count - args.decay_start) // (decay_intervals))
+                alpha = args.lr_decay ** ((epoch - args.decay_start) // (decay_intervals))
             return alpha
 
         if args.lr_adjust_type == 'DASA':
@@ -147,12 +149,6 @@ class Seq2SeqAgent(BaseAgent):
                                               cycle_mult=2)
                 for opt in self.optimizers
             ]
-
-        warm_up_with_cosine_lr = lambda iters: (iters // args.log_every) / args.warm_up_epochs if (iters // args.log_every) <= args.warm_up_epochs else \
-            0.5 * (1.0 + math.cos(
-                (iters // args.log_every - args.warm_up_epochs) / (args.iters // args.log_every - args.warm_up_epochs) * math.pi))
-        self.schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda=warm_up_with_cosine_lr) for opt in
-                           self.optimizers]
 
         if args.apex:
             self.models, self.optimizers = amp.initialize(self.models, self.optimizers, opt_level='O1')
@@ -452,7 +448,7 @@ class Seq2SeqAgent(BaseAgent):
                 instr_attn_prob = self.instr_locator(h_t)
                 instr_mask = utils.length2mask([sl.item() for sl in seq_lengths], size=args.maxInput)
                 instr_attn_prob.masked_fill_(instr_mask, -float('inf'))
-                instr_attn_weight = gumbel_softmax(instr_attn_prob, tau=0.1, hard=args.st_gumbel)
+                instr_attn_weight, instr_attn_weight_soft = gumbel_softmax(instr_attn_prob, tau=0.1, hard=args.st_gumbel)
                 assert not torch.isnan(instr_attn_weight).any()
                 sampled_instr = torch.sum((token_embeds * instr_attn_weight.unsqueeze(-1)), 1).unsqueeze(1)
 
@@ -732,12 +728,10 @@ class Seq2SeqAgent(BaseAgent):
 
         self.losses = []
         for iter in range(1, n_iters + 1):
-
             for opt in self.optimizers:
                 opt.zero_grad()
 
             self.loss = 0
-
             if feedback == 'teacher':
                 self.feedback = 'teacher'
                 self.rollout(train_ml=args.teacher_weight, train_rl=False, **kwargs)
@@ -755,10 +749,14 @@ class Seq2SeqAgent(BaseAgent):
             if args.aug is None:
                 print_progress(iter, n_iters + 1, prefix='Progress:', suffix='Complete', bar_length=50)
 
+    def adjust_lr(self):
         for sch in self.schedulers:
             sch.step()
-            lr = sch.get_last_lr()
-        self.logs['loss/lr'].append(lr[-1])
+            if args.lr_adjust_type == 'cosine':
+                lr = sch.optimizer.param_groups[0]['lr']
+            else:
+                lr = sch.get_last_lr()[-1]
+        self.logs['loss/lr'].append(lr)
 
     def save(self, epoch, path):
         ''' Snapshot models '''
