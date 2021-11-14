@@ -55,6 +55,7 @@ class Param:
         # Listener Model Config
         self.parser.add_argument("--zeroInit", dest='zero_init', action='store_const', default=False, const=True)
         self.parser.add_argument("--mlWeight", dest='ml_weight', type=float, default=0.20)
+        self.parser.add_argument("--pgWeight", dest='pg_weight', type=float, default=None)
         self.parser.add_argument("--teacherWeight", dest='teacher_weight', type=float, default=1.)
         self.parser.add_argument("--features", type=str, default='places365')
 

@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-nerf-warmup
+name=VLNBERT-train-Prevalent-nerf-coslr
 
 flag="--vlnbert prevalent
 
@@ -12,15 +12,15 @@ flag="--vlnbert prevalent
       --batchSize 8
       --feedback sample
       --lr 1e-5
-      --iters 300000
+      --iters 100000
       --optim adamW
       --mlWeight 0.20
       --maxInput 80
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
-      --apex
-      --nerf_pe"
+      --nerf_pe
+      "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=2 python r2r_src/train.py $flag --name $name

@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-mpadd-matchmax-COSWULR
+name=VLNBERT-train-Prevalent-mpadd-matchmax-COSWULR-dyt-selfvis-and-cross-pgloss
 
 flag="--vlnbert prevalent
 
@@ -25,7 +25,8 @@ flag="--vlnbert prevalent
       --match_type max
       --st_gumbel
       --lr_adjust_type cosine
+      --pgWeight 1.0
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name

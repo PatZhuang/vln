@@ -156,6 +156,7 @@ class Seq2SeqAgent(BaseAgent):
         # Evaluations
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, size_average=False)
+        self.progress_criterion = nn.L1Loss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
 
         # Logs
@@ -429,6 +430,8 @@ class Seq2SeqAgent(BaseAgent):
         masks = []
         entropys = []
         ml_loss = 0.
+        pg_loss = 0.
+        instr_index = torch.arange(80).cuda()
 
         for t in range(self.episode_len):
             input_feat = self.get_input_feat(perm_obs)
@@ -449,7 +452,24 @@ class Seq2SeqAgent(BaseAgent):
                 instr_mask = utils.length2mask([sl.item() for sl in seq_lengths], size=args.maxInput)
                 instr_attn_prob.masked_fill_(instr_mask, -float('inf'))
                 instr_attn_weight, instr_attn_weight_soft = gumbel_softmax(instr_attn_prob, tau=0.1, hard=args.st_gumbel)
-                assert not torch.isnan(instr_attn_weight).any()
+
+                if args.pg_weight is not None:
+                    progress_pred = torch.sum(instr_attn_weight_soft * instr_index, 1) / torch.tensor(seq_lengths).cuda()
+                    if t == 0:
+                        last_progress_pred = progress_pred
+                        last_progress_gt = torch.zeros_like(progress_pred)
+                        traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
+                        pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
+                    else:
+                        traj_progress = torch.tensor([
+                            self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
+                            for ob in perm_obs
+                        ]).cuda()
+                        progress_gt = 1 - traj_progress / traj_length
+                        pg_loss += self.progress_criterion((last_progress_pred - progress_pred), (last_progress_gt - progress_gt))
+                        last_progress_pred = progress_pred
+                        last_progress_gt = progress_gt
+
                 sampled_instr = torch.sum((token_embeds * instr_attn_weight.unsqueeze(-1)), 1).unsqueeze(1)
 
                 '''Object BERT'''
@@ -669,6 +689,10 @@ class Seq2SeqAgent(BaseAgent):
         if train_ml is not None:
             self.loss += ml_loss * train_ml / batch_size
             self.logs['IL_loss'].append((ml_loss * train_ml / batch_size).item())
+
+        if args.pg_weight is not None:
+            self.loss += pg_loss * args.pg_weight / batch_size
+            self.logs['pg_loss'].append((pg_loss / batch_size).item())
 
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)
