@@ -459,14 +459,16 @@ class Seq2SeqAgent(BaseAgent):
                         last_progress_pred = progress_pred
                         last_progress_gt = torch.zeros_like(progress_pred)
                         traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
-                        pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
+                        # pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
+                        pg_loss += torch.sum(progress_pred)
                     else:
                         traj_progress = torch.tensor([
                             self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
                             for ob in perm_obs
                         ]).cuda()
                         progress_gt = 1 - traj_progress / traj_length
-                        pg_loss += self.progress_criterion((last_progress_pred - progress_pred), (last_progress_gt - progress_gt))
+                        # pg_loss += self.progress_criterion((last_progress_pred - progress_pred), (last_progress_gt - progress_gt))
+                        pg_loss += torch.sum((last_progress_pred - progress_pred) - (progress_gt - last_progress_gt))
                         last_progress_pred = progress_pred
                         last_progress_gt = progress_gt
 
@@ -512,9 +514,11 @@ class Seq2SeqAgent(BaseAgent):
                              'cand_mp_feats': candidate_mp_feat,
                              }
 
-            h_t, logit = self.vln_bert(**visual_inputs)
+            h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
+
+
 
             if args.object:
                 logit = (logit + obj_instr_match_score) / 2
@@ -644,7 +648,7 @@ class Seq2SeqAgent(BaseAgent):
                              'cand_feats': candidate_feat,
                              'cand_mp_feats': candidate_mp_feat,
                              'cand_lb_feats': candidate_lb_feat}
-            last_h_, _ = self.vln_bert(**visual_inputs)
+            last_h_, _, _ = self.vln_bert(**visual_inputs)
 
             rl_loss = 0.
 
@@ -692,7 +696,7 @@ class Seq2SeqAgent(BaseAgent):
 
         if args.pg_weight is not None:
             self.loss += pg_loss * args.pg_weight / batch_size
-            self.logs['pg_loss'].append((pg_loss / batch_size).item())
+            self.logs['PG_loss'].append((pg_loss * args.pg_weight / batch_size).item())
 
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)

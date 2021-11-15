@@ -95,10 +95,9 @@ class BertSelfAttention(nn.Module):
 
         self.mode = mode
 
-        if self.mode == 'visual':
-            # dynamic temperature
-            self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
-            self.temp_act = nn.ReLU()
+        # dynamic temperature
+        self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
+        self.temp_act = nn.ReLU()
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -490,4 +489,4 @@ class VLNBert(BertPreTrainedModel):
             attended_language = (language_attention_probs * text_embeds[:, 1:, :]).sum(1)
             attended_visual = (visual_attention_probs * img_embedding_output).sum(1)
 
-            return pooled_output, visual_action_scores, attended_language, attended_visual
+            return pooled_output, visual_action_scores, attended_language, attended_visual, language_attention_probs

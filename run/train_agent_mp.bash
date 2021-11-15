@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-maxpool-alpha-coslr
+name=VLNBERT-train-Prevalent-mp2-coslr
 
 flag="--vlnbert prevalent
 
@@ -19,9 +19,9 @@ flag="--vlnbert prevalent
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
-      --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
+      --max_pool_feature img_features/ResNet-152-places365-maxpool_2.pkl
       --mix_type alpha
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name

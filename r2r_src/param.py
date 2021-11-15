@@ -28,6 +28,8 @@ class Param:
         self.parser.add_argument("--st_gumbel", action="store_const", default=False, const=True, help="straight through gumbel softmax")
         self.parser.add_argument('--match_type', type=str, default='max', help='instruction and object tag match type, [max, mean]')
         # self.parser.add_argument("--locate_instruction", action="store_const", default=False, const=True)
+        self.parser.add_argument("--visualize", action="store_const", default=False, const=True,
+                                 help="enable visualization")
 
         self.parser.add_argument('--lr_adjust_type', type=str, default='cosine', help='learning rate adjust type')
         self.parser.add_argument("--warm_steps", type=int, default=10)

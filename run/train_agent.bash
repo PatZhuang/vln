@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-newsim
+name=VLNBERT-train-Prevalent-baseline-xsdyt
 
 flag="--vlnbert prevalent
 
@@ -12,7 +12,7 @@ flag="--vlnbert prevalent
       --batchSize 8
       --feedback sample
       --lr 1e-5
-      --iters 300000
+      --iters 100000
       --optim adamW
 
       --mlWeight 0.20
@@ -22,4 +22,4 @@ flag="--vlnbert prevalent
       --dropout 0.5"
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name
