@@ -75,7 +75,7 @@ class BertEmbeddings(nn.Module):
 
 
 class BertSelfAttention(nn.Module):
-    def __init__(self, config, mode):
+    def __init__(self, config):
         super(BertSelfAttention, self).__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
@@ -92,12 +92,6 @@ class BertSelfAttention(nn.Module):
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-
-        self.mode = mode
-
-        # dynamic temperature
-        self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
-        self.temp_act = nn.ReLU()
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -118,11 +112,6 @@ class BertSelfAttention(nn.Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         attention_scores = attention_scores + attention_mask
-
-        if self.mode == 'visual':
-            # dynamic temperature
-            dy_t = self.temp_act(self.temp_fc(query_layer))
-            attention_scores = attention_scores * dy_t
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -160,9 +149,9 @@ class BertSelfOutput(nn.Module):
 
 
 class BertAttention(nn.Module):
-    def __init__(self, config, mode):
+    def __init__(self, config):
         super(BertAttention, self).__init__()
-        self.self = BertSelfAttention(config, mode)
+        self.self = BertSelfAttention(config)
         self.output = BertSelfOutput(config)
 
     def forward(self, input_tensor, attention_mask, head_mask=None):
@@ -202,9 +191,9 @@ class BertOutput(nn.Module):
 
 
 class BertLayer(nn.Module):
-    def __init__(self, config, mode):
+    def __init__(self, config):
         super(BertLayer, self).__init__()
-        self.attention = BertAttention(config, mode)
+        self.attention = BertAttention(config)
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
 
@@ -255,7 +244,7 @@ class BertOutAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        # dynamic temperature
+        # # dynamic temperature
         self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
         self.temp_act = nn.ReLU()
 
@@ -286,7 +275,7 @@ class BertOutAttention(nn.Module):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
-        # dynamic temperature
+        # # dynamic temperature
         dy_t = self.temp_act(self.temp_fc(query_layer))
         attention_scores = attention_scores * dy_t
 
@@ -313,11 +302,11 @@ class LXRTXLayer(nn.Module):
         super().__init__()
         self.config = config
         # Lang self-att and FFN layer
-        self.lang_self_att = BertAttention(config, mode='language')
+        self.lang_self_att = BertAttention(config)
         self.lang_inter = BertIntermediate(config)
         self.lang_output = BertOutput(config)
         # Visn self-att and FFN layer
-        self.visn_self_att = BertAttention(config, mode='visual')
+        self.visn_self_att = BertAttention(config)
         self.visn_inter = BertIntermediate(config)
         self.visn_output = BertOutput(config)
         # The cross attention layer
@@ -397,11 +386,11 @@ class VLNBert(BertPreTrainedModel):
         self.vl_layers = config.vl_layers                # 4
         self.la_layers = config.la_layers                # 9
         self.lalayer = nn.ModuleList(
-            [BertLayer(config, mode='language') for _ in range(self.la_layers)])
+            [BertLayer(config) for _ in range(self.la_layers)])
         self.addlayer = nn.ModuleList(
             [LXRTXLayer(config) for _ in range(self.vl_layers)])
         # for object:
-        self.objlayer = nn.ModuleList([BertLayer(config, mode='object') for _ in range(3)])
+        self.objlayer = nn.ModuleList([BertLayer(config) for _ in range(3)])
         self.ollayer = nn.ModuleList([LXRTXLayer(config) for _ in range(3)])
         self.obj_SM = nn.Softmax(-1)
         self.vision_encoder = VisionEncoder(self.config.img_feature_dim, self.config)

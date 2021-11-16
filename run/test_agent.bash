@@ -6,7 +6,7 @@ flag="--vlnbert prevalent
       --test_only 0
 
       --train validlistener
-      --load snap/VLNBERT-PREVALENT-final/state_dict/best_val_unseen
+      --load snap/VLNBERT-train-Prevalent-baseline/state_dict/best_val_unseen
 
       --features places365
       --maxAction 15
@@ -23,4 +23,4 @@ flag="--vlnbert prevalent
       --dropout 0.5"
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=1 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name

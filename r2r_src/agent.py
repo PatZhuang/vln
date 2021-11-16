@@ -115,13 +115,13 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
 
-        if args.object:
-            self.instr_locator = nn.Linear(768, args.maxInput).cuda()
-
-            self.models += [self.instr_locator]
-
-            self.instr_locator_optimizer = torch.optim.SGD(self.instr_locator.parameters(), lr=1e-4)
-            self.optimizers += [self.instr_locator_optimizer]
+        # if args.object:
+        #     self.instr_locator = nn.Linear(768, args.maxInput).cuda()
+        #
+        #     self.models += [self.instr_locator]
+        #
+        #     self.instr_locator_optimizer = torch.optim.SGD(self.instr_locator.parameters(), lr=1e-4)
+        #     self.optimizers += [self.instr_locator_optimizer]
 
         def lr_lambda_DASA(epoch):
             decay_intervals = args.decay_intervals
@@ -431,7 +431,7 @@ class Seq2SeqAgent(BaseAgent):
         entropys = []
         ml_loss = 0.
         pg_loss = 0.
-        instr_index = torch.arange(80).cuda()
+        instr_index = torch.arange(args.maxInput-1).cuda()
 
         for t in range(self.episode_len):
             input_feat = self.get_input_feat(perm_obs)
@@ -441,51 +441,6 @@ class Seq2SeqAgent(BaseAgent):
 
             # Mask outputs where agent can't move forward
             candidate_mask = utils.length2mask(candidate_leng)
-
-            if args.object:
-                candidate_pos = input_feat['cand_pos']
-                object_feat = input_feat['obj_feat']
-                object_bbox = input_feat['obj_bbox']
-
-                # locate instruction
-                instr_attn_prob = self.instr_locator(h_t)
-                instr_mask = utils.length2mask([sl.item() for sl in seq_lengths], size=args.maxInput)
-                instr_attn_prob.masked_fill_(instr_mask, -float('inf'))
-                instr_attn_weight, instr_attn_weight_soft = gumbel_softmax(instr_attn_prob, tau=0.1, hard=args.st_gumbel)
-
-                if args.pg_weight is not None:
-                    progress_pred = torch.sum(instr_attn_weight_soft * instr_index, 1) / torch.tensor(seq_lengths).cuda()
-                    if t == 0:
-                        last_progress_pred = progress_pred
-                        last_progress_gt = torch.zeros_like(progress_pred)
-                        traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
-                        # pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
-                        pg_loss += torch.sum(progress_pred)
-                    else:
-                        traj_progress = torch.tensor([
-                            self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
-                            for ob in perm_obs
-                        ]).cuda()
-                        progress_gt = 1 - traj_progress / traj_length
-                        # pg_loss += self.progress_criterion((last_progress_pred - progress_pred), (last_progress_gt - progress_gt))
-                        pg_loss += torch.sum((last_progress_pred - progress_pred) - (progress_gt - last_progress_gt))
-                        last_progress_pred = progress_pred
-                        last_progress_gt = progress_gt
-
-                sampled_instr = torch.sum((token_embeds * instr_attn_weight.unsqueeze(-1)), 1).unsqueeze(1)
-
-                '''Object BERT'''
-                object_inputs = {
-                    'mode': 'object',
-                    'sentence': sampled_instr,
-                    'obj_feat': object_feat,
-                    'obj_bbox': object_bbox,
-                    'cand_pos': candidate_pos,
-                    'cand_mask': candidate_mask,
-                    'lang_mask': language_attention_mask
-                }
-
-                obj_instr_match_score = self.vln_bert(**object_inputs)
 
             # the first [CLS] token, initialized by the language BERT, serves
             # as the agent's state passing through time steps
@@ -515,15 +470,54 @@ class Seq2SeqAgent(BaseAgent):
                              }
 
             h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
+            hidden_states.append(h_t)
+
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
 
-
-
             if args.object:
-                logit = (logit + obj_instr_match_score) / 2
+                candidate_pos = input_feat['cand_pos']
+                object_feat = input_feat['obj_feat']
+                object_bbox = input_feat['obj_bbox']
 
-            hidden_states.append(h_t)
+                # mimic straight through gumbel-softmaxsc
+                language_attn_probs = language_attn_probs.view(batch_size, -1)
+                hard_idx = language_attn_probs.max(-1, keepdim=True)[1]
+                hard_prob = torch.zeros_like(language_attn_probs).scatter_(-1, hard_idx, 1.0)
+                language_attn_probs_hard = hard_prob - language_attn_probs.detach() + language_attn_probs
+
+                if args.pg_weight is not None:
+                    progress_pred = torch.sum(language_attn_probs * instr_index, 1) / torch.tensor(seq_lengths).cuda()
+                    if t == 0:
+                        last_progress_pred = progress_pred
+                        last_progress_gt = torch.zeros_like(progress_pred)
+                        traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
+                        pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
+                    else:
+                        traj_progress = torch.tensor([
+                            self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
+                            for ob in perm_obs
+                        ]).cuda()
+                        progress_gt = 1 - traj_progress / traj_length
+                        pg_loss += self.progress_criterion((last_progress_pred - progress_pred), (last_progress_gt - progress_gt))
+                        last_progress_pred = progress_pred
+                        last_progress_gt = progress_gt
+
+                sampled_instr = torch.sum((token_embeds * language_attn_probs_hard.unsqueeze(-1)), 1).unsqueeze(1)
+
+                '''Object BERT'''
+                object_inputs = {
+                    'mode': 'object',
+                    'sentence': sampled_instr,
+                    'obj_feat': object_feat,
+                    'obj_bbox': object_bbox,
+                    'cand_pos': candidate_pos,
+                    'cand_mask': candidate_mask,
+                    'lang_mask': language_attention_mask
+                }
+
+                obj_instr_match_score = self.vln_bert(**object_inputs)
+                logit = (logit + obj_instr_match_score) / 2
 
             # Supervised training
             target = self._teacher_action(perm_obs, ended)

@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-mp2-coslr
+name=VLNBERT-train-Prevalent-baseline-mp-xsdyt
 
 flag="--vlnbert prevalent
 
@@ -19,7 +19,7 @@ flag="--vlnbert prevalent
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
-      --max_pool_feature img_features/ResNet-152-places365-maxpool_2.pkl
+      --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
       --mix_type alpha
       "
 

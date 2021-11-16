@@ -1,9 +1,10 @@
-name=VLNBERT-train-Prevalent-obj-stmax-add-coslr
+name=VLNBERT-train-Prevalent-match-pgloss-new-nodyt
 
 flag="--vlnbert prevalent
 
       --aug data/prevalent/prevalent_aug.json
       --test_only 0
+      --load snap/VLNBERT-train-Prevalent-match-pgloss-new-nodyt/state_dict/latest_dict
 
       --train auglistener
 
@@ -12,7 +13,7 @@ flag="--vlnbert prevalent
       --batchSize 16
       --feedback sample
       --lr 1e-5
-      --iters 100000
+      --iters 72000
       --optim adamW
 
       --mlWeight 0.20
@@ -26,4 +27,4 @@ flag="--vlnbert prevalent
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name

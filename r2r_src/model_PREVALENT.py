@@ -85,7 +85,7 @@ class VLNBERT(nn.Module):
 
         if mode == 'language':
             init_state, encoded_sentence, token_embeds = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
-            return init_state, encoded_sentence, token_embeds
+            return init_state, encoded_sentence, token_embeds[:, 1:, :]
 
         if mode == 'object':
             match_score = self.vln_bert(mode, sentence, lang_mask=lang_mask, obj_feat=obj_feat.long(), obj_pos_encoding=None)
