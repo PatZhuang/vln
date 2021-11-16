@@ -8,20 +8,22 @@ class Param:
 
         # General
         self.parser.add_argument('--test_only', type=int, default=0, help='fast mode for testing')
-
-        self.parser.add_argument('--iters', type=int, default=300000, help='training iterations')
+        self.parser.add_argument('--iters', type=int, default=100000, help='training iterations')
         self.parser.add_argument('--name', type=str, default='default', help='experiment id')
-        self.parser.add_argument('--vlnbert', type=str, default='oscar', help='oscar or prevalent')
-        self.parser.add_argument('--train', type=str, default='listener')
+        self.parser.add_argument('--vlnbert', type=str, default='prevalent', help='oscar or prevalent')
+        self.parser.add_argument('--train', type=str, default='auglistener')
         self.parser.add_argument('--description', type=str, default='no description\n')
+        self.parser.add_argument('--log_every', type=int, default=2000, help='image height')
+        self.parser.add_argument('--batchSize', type=int, default=8)
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
-        self.parser.add_argument("--object", action="store_const", default=False, const=True)
-        self.parser.add_argument("--render_image", action="store_const", default=False, const=True)
-        self.parser.add_argument('--warm_up_epochs', type=int, default=5, help='warmup')
+
+        # Augmented Paths from
+        self.parser.add_argument("--aug", default=None)
+
+        # simulator
         self.parser.add_argument('--image_w', type=int, default=640, help='image width')
         self.parser.add_argument('--image_h', type=int, default=480, help='image height')
-        self.parser.add_argument('--log_every', type=int, default=2000, help='image height')
-        self.parser.add_argument("--drop_obj", action="store_const", default=False, const=True)
+        self.parser.add_argument("--render_image", action="store_const", default=False, const=True)
 
         # maxpooling feature
         self.parser.add_argument('--max_pool_feature', type=str, default=None, help='path of the max pooled feature')
@@ -29,34 +31,31 @@ class Param:
         self.parser.add_argument('--mix_type', type=str, default='alpha', help='max pool feature mix type, [fc, alpha]')
 
         # object match
+        self.parser.add_argument("--object", action="store_const", default=False, const=True)
         self.parser.add_argument('--top_N_obj', type=int, default=8)
         self.parser.add_argument("--nerf_pe", action="store_const", default=False, const=True)
-        self.parser.add_argument("--st_gumbel", action="store_const", default=False, const=True, help="straight through gumbel softmax")
         self.parser.add_argument('--match_type', type=str, default='max', help='instruction and object tag match type, [max, mean]')
-        # self.parser.add_argument("--locate_instruction", action="store_const", default=False, const=True)
-        # self.parser.add_argument("--visualize", action="store_const", default=False, const=True,
-        #                          help="enable visualization")
 
         # learning rate
+        self.parser.add_argument('--warm_up_epochs', type=int, default=5, help='warmup')
         self.parser.add_argument('--lr_adjust_type', type=str, default='cosine', help='learning rate adjust type')
         self.parser.add_argument("--warm_steps", type=int, default=10)
         self.parser.add_argument("--decay_start", type=int, default=20)
         self.parser.add_argument("--decay_intervals", type=int, default=15)
         self.parser.add_argument("--lr_decay", type=float, default=0.2)
+        self.parser.add_argument('--optim', type=str, default='rms')  # rms, adam
+        self.parser.add_argument('--lr', type=float, default=0.00001, help="the learning rate")
+        self.parser.add_argument('--decay', dest='weight_decay', type=float, default=0.)
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
         self.parser.add_argument('--maxAction', type=int, default=15, help='Max Action sequence')
-        self.parser.add_argument('--batchSize', type=int, default=8)
         self.parser.add_argument('--ignoreid', type=int, default=-100)
         self.parser.add_argument('--feature_size', type=int, default=2048)
-        self.parser.add_argument("--loadOptim",action="store_const", default=False, const=True)
 
         # Load the model from
         self.parser.add_argument("--load", default=None, help='path of the trained model')
-
-        # Augmented Paths from
-        self.parser.add_argument("--aug", default=None)
+        self.parser.add_argument("--loadOptim", action="store_const", default=False, const=True)
 
         # Listener Model Config
         self.parser.add_argument("--zeroInit", dest='zero_init', action='store_const', default=False, const=True)
@@ -73,18 +72,14 @@ class Param:
         self.parser.add_argument("--submit", type=int, default=0)
 
         # Training Configurations
-        self.parser.add_argument('--optim', type=str, default='rms')    # rms, adam
-        self.parser.add_argument('--lr', type=float, default=0.00001, help="the learning rate")
-        self.parser.add_argument('--decay', dest='weight_decay', type=float, default=0.)
         self.parser.add_argument('--feedback', type=str, default='sample',
                             help='How to choose next position, one of ``teacher``, ``sample`` and ``argmax``')
         self.parser.add_argument('--teacher', type=str, default='final',
                             help="How to get supervision. one of ``next`` and ``final`` ")
-        self.parser.add_argument('--epsilon', type=float, default=0.1)
 
         # Model hyper params:
         self.parser.add_argument("--angleFeatSize", dest="angle_feat_size", type=int, default=4)
-
+        self.parser.add_argument('--epsilon', type=float, default=0.1)
         # A2C
         self.parser.add_argument("--gamma", default=0.9, type=float)
         self.parser.add_argument("--normalize", dest="normalize_loss", default="total", type=str, help='batch or total')
