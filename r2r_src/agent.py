@@ -115,13 +115,8 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
 
-        # if args.object:
-        #     self.instr_locator = nn.Linear(768, args.maxInput).cuda()
-        #
-        #     self.models += [self.instr_locator]
-        #
-        #     self.instr_locator_optimizer = torch.optim.SGD(self.instr_locator.parameters(), lr=1e-4)
-        #     self.optimizers += [self.instr_locator_optimizer]
+        if args.visualize:
+            self.visualization_log = {}
 
         def lr_lambda_DASA(epoch):
             decay_intervals = args.decay_intervals
@@ -155,7 +150,7 @@ class Seq2SeqAgent(BaseAgent):
 
         # Evaluations
         self.losses = []
-        self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, size_average=False)
+        self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
         self.progress_criterion = nn.L1Loss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
 
@@ -433,6 +428,14 @@ class Seq2SeqAgent(BaseAgent):
         pg_loss = 0.
         instr_index = torch.arange(args.maxInput-1).cuda()
 
+        if args.visualize:
+            for i, ob in enumerate(perm_obs):
+                self.visualization_log[ob['instr_id']] = {
+                    'language_attn_prob': [],
+                    'progress_gt': [],
+                    'seq_length': seq_lengths[i]
+                }
+
         for t in range(self.episode_len):
             input_feat = self.get_input_feat(perm_obs)
             input_a_t = input_feat['input_a_t']
@@ -472,6 +475,11 @@ class Seq2SeqAgent(BaseAgent):
             h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
             language_attn_probs = language_attn_probs.view(batch_size, -1)
             hidden_states.append(h_t)
+
+            if args.visualize:
+                for i, ob in enumerate(perm_obs):
+                    self.visualization_log[ob['instr_id']]['language_attn_prob'].append(language_attn_probs[i, :].detach().cpu().numpy())
+
 
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))

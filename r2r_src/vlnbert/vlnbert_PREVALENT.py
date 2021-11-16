@@ -392,7 +392,6 @@ class VLNBert(BertPreTrainedModel):
         # for object:
         self.objlayer = nn.ModuleList([BertLayer(config) for _ in range(3)])
         self.ollayer = nn.ModuleList([LXRTXLayer(config) for _ in range(3)])
-        self.obj_SM = nn.Softmax(-1)
         self.vision_encoder = VisionEncoder(self.config.img_feature_dim, self.config)
         self.init_weights()
 
@@ -409,8 +408,6 @@ class VLNBert(BertPreTrainedModel):
 
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
-
-        head_mask = [None] * self.config.num_hidden_layers
 
         if mode == 'language':
             ''' LXMERT language branch (in VLN only perform this at initialization) '''

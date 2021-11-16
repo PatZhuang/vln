@@ -191,6 +191,9 @@ def valid(train_env, tok, val_envs={}):
                     f,
                     sort_keys=True, indent=4, separators=(',', ': ')
                 )
+    if args.visualize:
+        with open('snap/%s/visualization.pkl' % args.name, 'wb') as f:
+            pkl.dump(agent.visualization_log, f)
 
 def setup():
     torch.manual_seed(1)
@@ -228,7 +231,8 @@ def train_val(test_only=False):
             featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
         else:
             featurized_scans = None
-        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
+        # val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
+        val_env_names = ['val_seen', 'val_unseen']
 
     with open(OBJECT_INFO_STORE, 'rb') as f:
         obj_store = pkl.load(f)
@@ -290,7 +294,8 @@ def train_val_augment(test_only=False):
             featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
         else:
             featurized_scans = None
-        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
+        # val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
+        val_env_names = ['val_seen', 'val_unseen']
 
     with open(OBJECT_INFO_STORE, 'rb') as f:
         obj_store = pkl.load(f)

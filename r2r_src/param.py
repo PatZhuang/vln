@@ -16,6 +16,7 @@ class Param:
         self.parser.add_argument('--log_every', type=int, default=2000, help='image height')
         self.parser.add_argument('--batchSize', type=int, default=8)
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
+        self.parser.add_argument("--visualize", action="store_const", default=False, const=True)
 
         # Augmented Paths from
         self.parser.add_argument("--aug", default=None)
@@ -43,7 +44,7 @@ class Param:
         self.parser.add_argument("--decay_start", type=int, default=20)
         self.parser.add_argument("--decay_intervals", type=int, default=15)
         self.parser.add_argument("--lr_decay", type=float, default=0.2)
-        self.parser.add_argument('--optim', type=str, default='rms')  # rms, adam
+        self.parser.add_argument('--optim', type=str, default='adamW')  # rms, adam
         self.parser.add_argument('--lr', type=float, default=0.00001, help="the learning rate")
         self.parser.add_argument('--decay', dest='weight_decay', type=float, default=0.)
 
@@ -78,13 +79,13 @@ class Param:
                             help="How to get supervision. one of ``next`` and ``final`` ")
 
         # Model hyper params:
-        self.parser.add_argument("--angleFeatSize", dest="angle_feat_size", type=int, default=4)
+        self.parser.add_argument("--angleFeatSize", dest="angle_feat_size", type=int, default=128)
         self.parser.add_argument('--epsilon', type=float, default=0.1)
         # A2C
         self.parser.add_argument("--gamma", default=0.9, type=float)
         self.parser.add_argument("--normalize", dest="normalize_loss", default="total", type=str, help='batch or total')
 
-        self.args = self.parser.parse_args()
+        self.args = self.parser.parse_known_args()[0]
 
         if self.args.optim == 'rms':
             print("Optimizer: Using RMSProp")
