@@ -22,15 +22,22 @@ class Param:
         self.parser.add_argument('--image_h', type=int, default=480, help='image height')
         self.parser.add_argument('--log_every', type=int, default=2000, help='image height')
         self.parser.add_argument("--drop_obj", action="store_const", default=False, const=True)
+
+        # maxpooling feature
         self.parser.add_argument('--max_pool_feature', type=str, default=None, help='path of the max pooled feature')
         self.parser.add_argument('--look_back_feature', type=str, default=None, help='path of the look-back feature')
         self.parser.add_argument('--mix_type', type=str, default='alpha', help='max pool feature mix type, [fc, alpha]')
+
+        # object match
+        self.parser.add_argument('--top_N_obj', type=int, default=8)
+        self.parser.add_argument("--nerf_pe", action="store_const", default=False, const=True)
         self.parser.add_argument("--st_gumbel", action="store_const", default=False, const=True, help="straight through gumbel softmax")
         self.parser.add_argument('--match_type', type=str, default='max', help='instruction and object tag match type, [max, mean]')
         # self.parser.add_argument("--locate_instruction", action="store_const", default=False, const=True)
-        self.parser.add_argument("--visualize", action="store_const", default=False, const=True,
-                                 help="enable visualization")
+        # self.parser.add_argument("--visualize", action="store_const", default=False, const=True,
+        #                          help="enable visualization")
 
+        # learning rate
         self.parser.add_argument('--lr_adjust_type', type=str, default='cosine', help='learning rate adjust type')
         self.parser.add_argument("--warm_steps", type=int, default=10)
         self.parser.add_argument("--decay_start", type=int, default=20)
@@ -44,9 +51,6 @@ class Param:
         self.parser.add_argument('--ignoreid', type=int, default=-100)
         self.parser.add_argument('--feature_size', type=int, default=2048)
         self.parser.add_argument("--loadOptim",action="store_const", default=False, const=True)
-        # self.parser.add_argument("--patchVis", action="store_const", default=False, const=True)
-        self.parser.add_argument('--top_N_obj', type=int, default=8)
-        self.parser.add_argument("--nerf_pe", action="store_const", default=False, const=True)
 
         # Load the model from
         self.parser.add_argument("--load", default=None, help='path of the trained model')
