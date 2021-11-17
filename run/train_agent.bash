@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-baseline-xsdyt
+name=cvpr-baseline-sdyt
 
 flag="--vlnbert prevalent
 
@@ -19,8 +19,9 @@ flag="--vlnbert prevalent
       --maxInput 80
       --angleFeatSize 128
       --featdropout 0.4
-      --dropout 0.5"
+      --dropout 0.5
+      "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=0 python r2r_src/train.py $flag --name $name
 

@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-mpadd-matchmax-COSWULR-xsdyt-pgloss-new
+name=cvpr-full-sdyt
 
 flag="--vlnbert prevalent
 
@@ -6,14 +6,13 @@ flag="--vlnbert prevalent
       --test_only 0
 
       --train auglistener
-      --load snap/VLNBERT-train-Prevalent-mpadd-matchmax-COSWULR-xsdyt-pgloss-new/state_dict/latest_dict
 
       --features places365
       --maxAction 15
       --batchSize 8
       --feedback sample
       --lr 1e-5
-      --iters 60000
+      --iters 100000
       --optim adamW
       --mlWeight 0.20
       --maxInput 80
@@ -26,11 +25,10 @@ flag="--vlnbert prevalent
 
       --object
       --match_type max
-      --st_gumbel
 
       --lr_adjust_type cosine
       --pgWeight 1.0
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name

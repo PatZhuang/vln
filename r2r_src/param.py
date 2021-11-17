@@ -17,6 +17,7 @@ class Param:
         self.parser.add_argument('--batchSize', type=int, default=8)
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
         self.parser.add_argument("--visualize", action="store_const", default=False, const=True)
+        self.parser.add_argument("--finetune", action="store_const", default=False, const=True)
 
         # Augmented Paths from
         self.parser.add_argument("--aug", default=None)

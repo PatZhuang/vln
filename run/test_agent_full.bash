@@ -1,4 +1,4 @@
-name=VLNBERT-test-Prevalent
+name=VLNBERT-test-cvpr-full
 
 flag="--vlnbert prevalent
 
@@ -6,7 +6,7 @@ flag="--vlnbert prevalent
       --test_only 0
 
       --train validlistener
-      --load snap/VLNBERT-train-Prevalent-mpadd-matchmax-COSWULR-dyt-selfvis-and-cross/state_dict/best_val_unseen
+      --load snap/cvpr-full/state_dict/best_val_unseen
 
       --features places365
       --maxAction 15
@@ -23,11 +23,15 @@ flag="--vlnbert prevalent
 
       --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
       --mix_type alpha
+
       --object
       --match_type max
-      --st_gumbel
+
       --lr_adjust_type cosine
+      --pgWeight 1.0
+
+      --visualize
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=6 python r2r_src/train.py $flag --name $name

@@ -1,4 +1,4 @@
-name=VLNBERT-test-cvpr-xdyt
+name=VLNBERT-test-cvpr-pgloss
 
 flag="--vlnbert prevalent
 
@@ -6,7 +6,7 @@ flag="--vlnbert prevalent
       --test_only 0
 
       --train validlistener
-      --load snap/cvpr-baseline-xdyt/state_dict/best_val_unseen
+      --load snap/cvpr-baseline-pgloss/state_dict/best_val_unseen
 
       --features places365
       --maxAction 15
@@ -22,6 +22,7 @@ flag="--vlnbert prevalent
       --featdropout 0.4
       --dropout 0.5
 
+      --pgWeight 1.0
       --visualize"
 
 mkdir -p snap/$name

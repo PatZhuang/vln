@@ -92,7 +92,8 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
                 listner.train(1, feedback=feedback_method)
 
                 print_progress(jdx, jdx_length, prefix='Progress:', suffix='Complete', bar_length=50)
-        listner.adjust_lr()
+        if not args.finetune:
+            listner.adjust_lr()
 
         # Log the training stats to tensorboard
         total = max(sum(listner.logs['total']), 1)
@@ -111,7 +112,6 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         writer.add_scalar("total_actions", total, idx)
         writer.add_scalar("max_length", length, idx)
         writer.add_scalar('loss/lr', lr, idx)
-        # print("total_actions", total, ", max_length", length)
 
         # Run validation
         loss_str = "iter {}\n".format(iter)

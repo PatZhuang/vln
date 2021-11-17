@@ -485,7 +485,7 @@ class Seq2SeqAgent(BaseAgent):
             logit.masked_fill_(candidate_mask, -float('inf'))
 
             if args.pg_weight is not None:
-                progress_pred = torch.sum(language_attn_probs * instr_index, 1) / torch.tensor(seq_lengths).cuda()
+                progress_pred = torch.sum(language_attn_probs * instr_index, 1) / torch.tensor(seq_lengths-1).cuda()
                 if t == 0:
                     last_progress_pred = progress_pred
                     last_progress_gt = torch.zeros_like(progress_pred)
@@ -818,7 +818,7 @@ class Seq2SeqAgent(BaseAgent):
             if model_keys != load_keys:
                 print("NOTICE: DIFFERENT KEYS IN THE LISTEREN")
             state.update(states[name]['state_dict'])
-            model.load_state_dict(state)
+            model.load_state_dict(state, strict=False)
             if args.loadOptim:
                 optimizer.load_state_dict(states[name]['optimizer'])
 
