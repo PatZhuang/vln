@@ -19,9 +19,13 @@ from rich import print
 
 import warnings
 warnings.filterwarnings("ignore")
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 from vlnbert.vlnbert_init import get_tokenizer
+
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 log_dir = 'snap/%s' % args.name
 if not os.path.exists(log_dir):
@@ -102,16 +106,19 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         RL_loss = sum(listner.logs['RL_loss']) / max(len(listner.logs['RL_loss']), 1)
         IL_loss = sum(listner.logs['IL_loss']) / max(len(listner.logs['IL_loss']), 1)
         PG_loss = sum(listner.logs['PG_loss']) / max(len(listner.logs['PG_loss']), 1)
+        AP_loss = sum(listner.logs['AP_loss']) / max(len(listner.logs['AP_loss']), 1)
         entropy = sum(listner.logs['entropy']) / total
-        lr = listner.logs['loss/lr'][-1]
+        if not args.finetune:
+            lr = listner.logs['loss/lr'][-1]
+            writer.add_scalar('loss/lr', lr, idx)
         writer.add_scalar("loss/critic", critic_loss, idx)
         writer.add_scalar("policy_entropy", entropy, idx)
         writer.add_scalar("loss/RL_loss", RL_loss, idx)
         writer.add_scalar("loss/IL_loss", IL_loss, idx)
         writer.add_scalar("loss/PG_loss", PG_loss, idx)
+        writer.add_scalar("loss/AP_loss", AP_loss, idx)
         writer.add_scalar("total_actions", total, idx)
         writer.add_scalar("max_length", length, idx)
-        writer.add_scalar('loss/lr', lr, idx)
 
         # Run validation
         loss_str = "iter {}\n".format(iter)
@@ -137,6 +144,25 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
                 loss_str += ', %s: %.4f' % (metric, val)
             loss_str += '\n'
 
+            if args.visualize:
+                attn_pos_cnt = np.zeros((args.maxAction, args.maxInput - 1))
+                attn_pos_heatmap = np.zeros((args.maxAction, args.maxInput - 1))
+                vis_log = listner.visualization_log
+                traj_dict = {r['instr_id']:r['trajectory'] for r in result}
+                for path_id in traj_dict.keys():
+                    for i, prob in enumerate(vis_log[path_id]['language_attn_prob']):
+                        attn_pos_heatmap[i] += prob
+                        attn_pos_cnt += (np.arange(args.maxInput - 1) < (vis_log[path_id]['seq_length'] - 1))
+                attn_pos_heatmap /= attn_pos_cnt
+                fig = plt.figure()
+                heatmap = sns.heatmap(attn_pos_heatmap,
+                                      square=True,
+                                      cbar=False,
+                                      cmap=sns.color_palette("light:#5A9", as_cmap=True),
+                                      yticklabels=2
+                                      )
+                writer.add_figure(env_name, fig, idx, close=True)
+
         record_file = open('./logs/' + args.name + '.txt', 'a')
         record_file.write(loss_str + '\n')
         record_file.close()
@@ -152,7 +178,7 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         print(('%s (%d %d%%) %s' % (timeSince(start, float(iter)/n_iters),
                                              iter, float(iter)/n_iters*100, loss_str)))
 
-        if iter % 1000 == 0:
+        if iter % 2000 == 0:
             print("BEST RESULT TILL NOW")
             for env_name in best_val:
                 print(env_name, best_val[env_name]['state'])

@@ -99,8 +99,6 @@ class Seq2SeqAgent(BaseAgent):
         self.episode_len = episode_len
         self.feature_size = self.env.feature_size
 
-        self.input_indexes = torch.arange(0, args.maxInput).cuda()
-
         # Models
         if args.vlnbert == 'oscar':
             self.vln_bert = model_OSCAR.VLNBERT(feature_size=self.feature_size + args.angle_feat_size).cuda()
@@ -426,6 +424,7 @@ class Seq2SeqAgent(BaseAgent):
         entropys = []
         ml_loss = 0.
         pg_loss = 0.
+        ap_loss = 0.
         instr_index = torch.arange(args.maxInput-1).cuda()
 
         if args.visualize:
@@ -433,7 +432,7 @@ class Seq2SeqAgent(BaseAgent):
                 self.visualization_log[ob['instr_id']] = {
                     'language_attn_prob': [],
                     'progress_gt': [],
-                    'seq_length': seq_lengths[i]
+                    'seq_length': seq_lengths[i].item()
                 }
 
         for t in range(self.episode_len):
@@ -480,12 +479,11 @@ class Seq2SeqAgent(BaseAgent):
                 for i, ob in enumerate(perm_obs):
                     self.visualization_log[ob['instr_id']]['language_attn_prob'].append(language_attn_probs[i, :].detach().cpu().numpy())
 
-
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
 
             if args.pg_weight is not None:
-                progress_pred = torch.sum(language_attn_probs * instr_index, 1) / torch.tensor(seq_lengths-1).cuda()
+                progress_pred = torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)
                 if t == 0:
                     last_progress_pred = progress_pred
                     last_progress_gt = torch.zeros_like(progress_pred)
@@ -501,6 +499,10 @@ class Seq2SeqAgent(BaseAgent):
                                                        (last_progress_gt - progress_gt))
                     last_progress_pred = progress_pred
                     last_progress_gt = progress_gt
+                # force language_attn_probs to be similar to one-hot
+                attn_loss = 1 - torch.sum(language_attn_probs ** 2, 1)
+                attn_loss.masked_fill_(attn_loss <= 0.5, 0)
+                ap_loss += torch.sum(attn_loss)
 
             if args.object:
                 candidate_pos = input_feat['cand_pos']
@@ -699,6 +701,8 @@ class Seq2SeqAgent(BaseAgent):
         if args.pg_weight is not None:
             self.loss += pg_loss * args.pg_weight / batch_size
             self.logs['PG_loss'].append((pg_loss * args.pg_weight / batch_size).item())
+            self.loss += ap_loss * args.pg_weight / batch_size
+            self.logs['AP_loss'].append((ap_loss * args.pg_weight / batch_size).item())
 
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)
