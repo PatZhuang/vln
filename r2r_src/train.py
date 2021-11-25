@@ -345,6 +345,8 @@ def train_val_augment(test_only=False):
 
 
 if __name__ == "__main__":
+    if args.name == 'debug':
+        torch.autograd.set_detect_anomaly(True)
     if args.train in ['listener', 'validlistener']:
         train_val(test_only=args.test_only)
     elif args.train == 'auglistener':

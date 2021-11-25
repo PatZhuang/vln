@@ -1,4 +1,4 @@
-name=cvpr-baseline-sdyt
+name=cvpr-baseline-pg-ap
 
 flag="--vlnbert prevalent
 
@@ -20,6 +20,8 @@ flag="--vlnbert prevalent
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
+
+      --pgWeight 1.0
       "
 
 mkdir -p snap/$name

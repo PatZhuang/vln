@@ -1,12 +1,12 @@
-name=VLNBERT-test-cvpr-pgloss
+name=VLNBERT-test-cvpr-pg-ap
 
 flag="--vlnbert prevalent
 
-      --submit 0
+      --submit 1
       --test_only 0
 
       --train validlistener
-      --load snap/cvpr-baseline-pgloss/state_dict/best_val_unseen
+      --load snap/cvpr-baseline-pg-ap/state_dict/best_val_unseen
 
       --features places365
       --maxAction 15
@@ -23,7 +23,9 @@ flag="--vlnbert prevalent
       --dropout 0.5
 
       --pgWeight 1.0
+      --gaussian
+
       --visualize"
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=0 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=4 python r2r_src/train.py $flag --name $name

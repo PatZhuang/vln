@@ -18,6 +18,8 @@ class Param:
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
         self.parser.add_argument("--visualize", action="store_const", default=False, const=True)
         self.parser.add_argument("--finetune", action="store_const", default=False, const=True)
+        self.parser.add_argument("--gaussian", action="store_const", default=False, const=True)
+        self.parser.add_argument("--gaussian_bias", action="store_const", default=False, const=True)
 
         # Augmented Paths from
         self.parser.add_argument("--aug", default=None)
@@ -48,6 +50,7 @@ class Param:
         self.parser.add_argument('--optim', type=str, default='adamW')  # rms, adam
         self.parser.add_argument('--lr', type=float, default=0.00001, help="the learning rate")
         self.parser.add_argument('--decay', dest='weight_decay', type=float, default=0.)
+        self.parser.add_argument('--gaussian_lr', type=float, default=0.01, help="the learning rate")
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")

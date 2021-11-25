@@ -1,19 +1,18 @@
-name=VLNBERT-PREVALENT-original
+name=cvpr-baseline-pg-gaussian-bias
 
 flag="--vlnbert prevalent
 
-      --submit 1
+      --aug data/prevalent/prevalent_aug.json
       --test_only 0
 
-      --train validlistener
-      --load snap/VLNBERT-PREVALENT-final/state_dict/best_val_unseen
+      --train auglistener
 
       --features places365
       --maxAction 15
       --batchSize 8
       --feedback sample
       --lr 1e-5
-      --iters 300000
+      --iters 100000
       --optim adamW
 
       --mlWeight 0.20
@@ -22,7 +21,12 @@ flag="--vlnbert prevalent
       --featdropout 0.4
       --dropout 0.5
 
-      --visualize"
+      --pgWeight 1.0
+      --gaussian
+      --gaussian_bias
+      --visualize
+      "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=0 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name
+

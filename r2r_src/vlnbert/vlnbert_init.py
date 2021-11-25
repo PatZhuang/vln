@@ -9,7 +9,7 @@ def get_tokenizer(args):
         tokenizer = tokenizer_class.from_pretrained(model_name_or_path, do_lower_case=True)
     elif args.vlnbert == 'prevalent':
         tokenizer_class = BertTokenizer
-        tokenizer = tokenizer_class.from_pretrained('bert-base-uncased')
+        tokenizer = tokenizer_class.from_pretrained('bert-base-uncased', local_files_only=True)
     return tokenizer
 
 def get_vlnbert_models(args, config=None):

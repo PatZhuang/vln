@@ -113,6 +113,24 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
 
+        # gaussian
+        if args.gaussian:
+            self.gaussian_std_FC = nn.Sequential(
+                nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
+                nn.Sigmoid()
+            ).cuda()
+            self.gaussian_std_FC_optimizer = torch.optim.SGD(self.gaussian_std_FC.parameters(), lr=args.gaussian_lr)
+            self.models.append(self.gaussian_std_FC)
+            self.optimizers.append(self.gaussian_std_FC_optimizer)
+        if args.gaussian and args.gaussian_bias:
+            self.gaussian_bias_FC = nn.Sequential(
+                nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
+                nn.Tanh()
+            ).cuda()
+            self.gaussian_bias_FC_optimizer = torch.optim.SGD(self.gaussian_bias_FC.parameters(), lr=args.gaussian_lr)
+            self.models.append(self.gaussian_bias_FC)
+            self.optimizers.append(self.gaussian_bias_FC_optimizer)
+
         if args.visualize:
             self.visualization_log = {}
 
@@ -127,7 +145,6 @@ class Seq2SeqAgent(BaseAgent):
             return alpha
 
         if args.lr_adjust_type == 'DASA':
-
             self.schedulers = [
                 torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda_DASA)
                 for opt in self.optimizers
@@ -137,8 +154,8 @@ class Seq2SeqAgent(BaseAgent):
                 CosineAnnealingWarmupRestarts(opt,
                                               first_cycle_steps=20,
                                               warmup_steps=5,
-                                              max_lr=args.lr,
-                                              min_lr=1e-7,
+                                              max_lr=opt.param_groups[0]['lr'],
+                                              min_lr=opt.param_groups[0]['lr'] * 0.01,
                                               cycle_mult=2)
                 for opt in self.optimizers
             ]
@@ -149,6 +166,9 @@ class Seq2SeqAgent(BaseAgent):
         # Evaluations
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
+        if args.gaussian:
+            self.kld_loss = torch.nn.KLDivLoss(reduction='sum')
+
         self.progress_criterion = nn.L1Loss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
 
@@ -200,8 +220,6 @@ class Seq2SeqAgent(BaseAgent):
 
         if args.max_pool_feature:
             candidate_mp_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size), dtype=np.float32)
-        if args.look_back_feature:
-            candidate_lb_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size), dtype=np.float32)
 
         # Note: The candidate_feat at len(ob['candidate']) is the feature for the END
         # which is zero in my implementation
@@ -235,8 +253,7 @@ class Seq2SeqAgent(BaseAgent):
                                                  args.feature_size:args.feature_size + 4]  # [sin(heading), cos(heading), sin(elev), cos(elev)]
                 if args.max_pool_feature:
                     candidate_mp_feat[i, j, :] = cc['mp_feature']
-                if args.look_back_feature:
-                    candidate_lb_feat[i, j, :] = cc['lb_feature']
+
         candidate_variable = {
             'candidate_feat': torch.from_numpy(candidate_feat).cuda(),
             'candidate_leng': candidate_leng
@@ -249,8 +266,6 @@ class Seq2SeqAgent(BaseAgent):
             })
         if args.max_pool_feature:
             candidate_variable['candidate_mp_feat'] = torch.from_numpy(candidate_mp_feat).cuda()
-        if args.look_back_feature:
-            candidate_variable['candidate_lb_feat'] = torch.from_numpy(candidate_lb_feat).cuda()
         return candidate_variable
 
     def _get_obj_input(self, obs):
@@ -266,6 +281,7 @@ class Seq2SeqAgent(BaseAgent):
 
         candidate_feat = candidate_variable['candidate_feat']
         candidate_leng = candidate_variable['candidate_leng']
+        assert not torch.isnan(candidate_feat).any()
 
         input_feat = {
             'input_a_t': input_a_t,
@@ -280,8 +296,6 @@ class Seq2SeqAgent(BaseAgent):
             })
         if args.max_pool_feature:
             input_feat['candidate_mp_feat'] = candidate_variable['candidate_mp_feat']
-        if args.look_back_feature:
-            input_feat['candidate_lb_feat'] = candidate_variable['candidate_lb_feat']
 
         return input_feat
 
@@ -472,6 +486,7 @@ class Seq2SeqAgent(BaseAgent):
                              }
 
             h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
+            assert not torch.isnan(h_t).any()
             language_attn_probs = language_attn_probs.view(batch_size, -1)
             hidden_states.append(h_t)
 
@@ -481,28 +496,56 @@ class Seq2SeqAgent(BaseAgent):
 
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
+            # assert not torch.isnan(logit).any()
 
-            if args.pg_weight is not None:
-                progress_pred = torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)
+            # if self.feedback == 'teacher' and args.pg_weight is not None:
+            #     progress_pred = torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)
+            #     if t == 0:
+            #         last_progress_pred = progress_pred
+            #         last_progress_gt = torch.zeros_like(progress_pred)
+            #         traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
+            #         pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
+            #     else:
+            #         traj_progress = torch.tensor([
+            #             self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
+            #             for ob in perm_obs
+            #         ]).cuda()
+            #         progress_gt = 1 - traj_progress / traj_length
+            #         pg_loss += self.progress_criterion((last_progress_pred - progress_pred),
+            #                                            (last_progress_gt - progress_gt))
+            #         last_progress_pred = progress_pred
+            #         last_progress_gt = progress_gt
+            #     # force language_attn_probs to be similar to one-hot
+            #     attn_loss = 1 - torch.sum(language_attn_probs ** 2, 1)
+            #     attn_loss.masked_fill_(attn_loss <= 0.5, 0)
+            #     ap_loss += torch.sum(attn_loss)
+
+            if self.feedback == 'teacher' and args.pg_weight is not None:
                 if t == 0:
-                    last_progress_pred = progress_pred
-                    last_progress_gt = torch.zeros_like(progress_pred)
                     traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
-                    pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
-                else:
-                    traj_progress = torch.tensor([
-                        self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
-                        for ob in perm_obs
-                    ]).cuda()
-                    progress_gt = 1 - traj_progress / traj_length
-                    pg_loss += self.progress_criterion((last_progress_pred - progress_pred),
-                                                       (last_progress_gt - progress_gt))
-                    last_progress_pred = progress_pred
-                    last_progress_gt = progress_gt
-                # force language_attn_probs to be similar to one-hot
-                attn_loss = 1 - torch.sum(language_attn_probs ** 2, 1)
-                attn_loss.masked_fill_(attn_loss <= 0.5, 0)
-                ap_loss += torch.sum(attn_loss)
+                traj_progress = torch.tensor([
+                    self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
+                    for ob in perm_obs
+                ]).cuda()
+                progress_gt = (1 - traj_progress / traj_length).clamp(min=0, max=1)
+                gaussian_mean = (progress_gt * torch.tensor([s.item() - 1 for s in seq_lengths]).cuda()).view(-1, 1)
+                gaussian_std = self.gaussian_std_FC(h_t) + 0.5  # assume std from 0.5 ~ 1.5
+                if args.gaussian_bias:
+                    gaussian_bias = self.gaussian_bias_FC(h_t) * 5  # assume bias from -5 ~ 5
+                    if t == 0:
+                        gaussian_bias.clamp_(min=0)
+                    gaussian_mean += gaussian_bias
+
+                # gaussian prob as gt prob of state x language attention scores
+                gaussian_prob = torch.stack([
+                    1 / (gaussian_std * ((2 * np.pi) ** 0.5)) * torch.exp(-(x - gaussian_mean) ** 2 / (2 * (gaussian_std ** 2)))
+                    for x in range(79)
+                ], 1).squeeze()
+                gaussian_prob.masked_fill_((1 - language_attention_mask[:, 1:]).bool(), 0)
+                gaussian_norm_factor = torch.sum(gaussian_prob, 1).view(-1, 1)
+                # normalize probs with summation as 1
+                gaussian_prob = gaussian_prob / gaussian_norm_factor
+                pg_loss += self.kld_loss(language_attn_probs.clamp(min=1e-5).log(), gaussian_prob)
 
             if args.object:
                 candidate_pos = input_feat['cand_pos']
@@ -628,11 +671,6 @@ class Seq2SeqAgent(BaseAgent):
             else:
                 candidate_mp_feat = None
 
-            if args.look_back_feature:
-                candidate_lb_feat = input_feat['candidate_lb_feat']
-            else:
-                candidate_lb_feat = None
-
             language_features = torch.cat((h_t.unsqueeze(1), language_features[:, 1:, :]), dim=1)
 
             candidate_mask = utils.length2mask(candidate_leng)
@@ -651,7 +689,7 @@ class Seq2SeqAgent(BaseAgent):
                              # 'pano_feats':         f_t,
                              'cand_feats': candidate_feat,
                              'cand_mp_feats': candidate_mp_feat,
-                             'cand_lb_feats': candidate_lb_feat}
+                             }
             last_h_, _, _ = self.vln_bert(**visual_inputs)
 
             rl_loss = 0.
@@ -698,11 +736,11 @@ class Seq2SeqAgent(BaseAgent):
             self.loss += ml_loss * train_ml / batch_size
             self.logs['IL_loss'].append((ml_loss * train_ml / batch_size).item())
 
-        if args.pg_weight is not None:
-            self.loss += pg_loss * args.pg_weight / batch_size
-            self.logs['PG_loss'].append((pg_loss * args.pg_weight / batch_size).item())
-            self.loss += ap_loss * args.pg_weight / batch_size
-            self.logs['AP_loss'].append((ap_loss * args.pg_weight / batch_size).item())
+            if args.pg_weight is not None:
+                self.loss += pg_loss * args.pg_weight / batch_size
+                self.logs['PG_loss'].append((pg_loss * args.pg_weight / batch_size).item())
+                # self.loss += ap_loss * args.pg_weight / batch_size
+                # self.logs['AP_loss'].append((ap_loss * args.pg_weight / batch_size).item())
 
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)
@@ -746,7 +784,11 @@ class Seq2SeqAgent(BaseAgent):
             with amp.scale_loss(self.loss, self.optimizers) as scaled_loss:
                 scaled_loss.backward()
         else:
-            self.loss.backward()
+            if args.name == 'debug':
+                with torch.autograd.detect_anomaly():
+                    self.loss.backward()
+            else:
+                self.loss.backward()
 
         torch.nn.utils.clip_grad_norm(self.vln_bert.parameters(), 40.)
 
