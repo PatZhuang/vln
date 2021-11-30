@@ -619,8 +619,8 @@ def print_progress(iteration, total, prefix='', suffix='', decimals=1, bar_lengt
 def ndtw_initialize():
     ndtw_criterion = {}
     scan_gts_dirs = ['data/id_paths.json']
-    if args.submit:
-        scan_gts_dirs.append('data/id_paths_test.json')
+    # if args.submit:
+    #     scan_gts_dirs.append('data/id_paths_test.json')
     all_scan_ids = []
     for scan_gts_dir in scan_gts_dirs:
         with open(scan_gts_dir) as f_:

@@ -152,7 +152,7 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
                 for path_id in traj_dict.keys():
                     for i, prob in enumerate(vis_log[path_id]['language_attn_prob']):
                         attn_pos_heatmap[i] += prob
-                        attn_pos_cnt += (np.arange(args.maxInput - 1) < (vis_log[path_id]['seq_length'] - 1))
+                        attn_pos_cnt[i] += (np.arange(args.maxInput - 1) < (vis_log[path_id]['seq_length'] - 1))
                 attn_pos_heatmap /= attn_pos_cnt
                 fig = plt.figure()
                 heatmap = sns.heatmap(attn_pos_heatmap,

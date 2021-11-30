@@ -296,6 +296,8 @@ class Seq2SeqAgent(BaseAgent):
             })
         if args.max_pool_feature:
             input_feat['candidate_mp_feat'] = candidate_variable['candidate_mp_feat']
+            mp_feats = torch.tensor([ob['mp_feature'] for ob in obs]).cuda()
+            input_feat['mp_feat'] = torch.cat([mp_feats, input_a_t], -1).unsqueeze(1)
 
         return input_feat
 
@@ -379,7 +381,7 @@ class Seq2SeqAgent(BaseAgent):
                 if action != -1:
                     traj[i]['path'].append((state[idx].location.viewpointId, state[idx].heading, state[idx].elevation))
 
-    def rollout(self, train_ml=None, train_rl=True, reset=True):
+    def rollout(self, train_ml=None, train_rl=False, reset=True):
         """
         :param train_ml:    The weight to train with maximum likelihood
         :param train_rl:    whether use RL in training
@@ -420,12 +422,13 @@ class Seq2SeqAgent(BaseAgent):
         } for ob in perm_obs]
 
         # Init the reward shaping
-        last_dist = np.zeros(batch_size, np.float32)
-        last_ndtw = np.zeros(batch_size, np.float32)
-        for i, ob in enumerate(perm_obs):  # The init distance from the view point to the target
-            last_dist[i] = ob['distance']
-            path_act = [vp[0] for vp in traj[i]['path']]
-            last_ndtw[i] = self.ndtw_criterion[ob['scan']](path_act, ob['gt_path'], metric='ndtw')
+        if train_rl:
+            last_dist = np.zeros(batch_size, np.float32)
+            last_ndtw = np.zeros(batch_size, np.float32)
+            for i, ob in enumerate(perm_obs):  # The init distance from the view point to the target
+                last_dist[i] = ob['distance']
+                path_act = [vp[0] for vp in traj[i]['path']]
+                last_ndtw[i] = self.ndtw_criterion[ob['scan']](path_act, ob['gt_path'], metric='ndtw')
 
         # Initialization the tracking state
         ended = np.array([False] * batch_size)  # Indices match permuation of the model, not env
@@ -470,6 +473,7 @@ class Seq2SeqAgent(BaseAgent):
 
             if args.max_pool_feature:
                 candidate_mp_feat = input_feat['candidate_mp_feat']
+                mp_feat = input_feat['mp_feat']
             else:
                 candidate_mp_feat = None
 
@@ -483,6 +487,7 @@ class Seq2SeqAgent(BaseAgent):
                              'action_feats': input_a_t,
                              'cand_feats': candidate_feat,
                              'cand_mp_feats': candidate_mp_feat,
+                             'mp_feats': mp_feat
                              }
 
             h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
@@ -553,7 +558,7 @@ class Seq2SeqAgent(BaseAgent):
                 object_bbox = input_feat['obj_bbox']
 
                 # mimic straight through gumbel-softmaxsc
-                hard_idx = language_attn_probs.max(-1, keepdim=True)[1]
+                hard_idx = language_attn_probs.max(-1, keepdim= True)[1]
                 hard_prob = torch.zeros_like(language_attn_probs).scatter_(-1, hard_idx, 1.0)
                 language_attn_probs_hard = hard_prob - language_attn_probs.detach() + language_attn_probs
                 sampled_instr = torch.sum((token_embeds * language_attn_probs_hard.unsqueeze(-1)), 1).unsqueeze(1)

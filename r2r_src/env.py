@@ -383,6 +383,8 @@ class R2RBatch():
             })
             if 'instr_encoding' in item:
                 obs[-1]['instr_encoding'] = item['instr_encoding']
+            if self.mp_feature is not None:
+                obs[-1]['mp_feature'] = self.mp_feature['_'.join([state.scanId, state.location.viewpointId])]
 
             # A2C reward. The negative distance between the state and the final state
             obs[-1]['distance'] = self.distances[state.scanId][state.location.viewpointId][item['path'][-1]]

@@ -80,7 +80,7 @@ class VLNBERT(nn.Module):
 
     def forward(self, mode, sentence, token_type_ids=None,
                 attention_mask=None, lang_mask=None, vis_mask=None,
-                position_ids=None, action_feats=None, pano_feats=None, cand_feats=None,
+                position_ids=None, action_feats=None, pano_feats=None, cand_feats=None, mp_feats=None,
                 cand_pos=None, cand_mask=None, obj_feat=None, obj_bbox=None, cand_mp_feats=None, cand_lb_feats=None):
 
         if mode == 'language':
@@ -108,12 +108,20 @@ class VLNBERT(nn.Module):
             state_with_action = self.action_LayerNorm(state_with_action)
             state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:,1:,:]), dim=1)
 
+            if mp_feats is not None:
+                _, _, _, _, language_attn_probs = self.vln_bert(mode, state_feats,
+                                                                attention_mask=attention_mask,
+                                                                lang_mask=lang_mask,
+                                                                vis_mask=torch.ones((args.batchSize, 1)).cuda(),
+                                                                img_feats=mp_feats)
+
+                state_feats = torch.cat((state_with_action.unsqueeze(1), language_attn_probs * sentence[:, 1:, :]), dim=1)
+
             # cand_feats_clone = cand_feats.clone()
 
-            if cand_mp_feats is not None:
-                if args.mix_type == 'alpha':
-                    cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha[0] * cand_mp_feats
-                    # logit is the attention scores over the candidate features
+            # if cand_mp_feats is not None:
+            #     if args.mix_type == 'alpha':
+            #         cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha[0] * cand_mp_feats
 
             cand_feats[..., :-args.angle_feat_size] = self.drop_env(cand_feats[..., :-args.angle_feat_size])
             # logit is the attention scores over the candidate features
