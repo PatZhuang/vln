@@ -106,18 +106,7 @@ class VLNBERT(nn.Module):
             state_action_embed = torch.cat((sentence[:,0,:], action_feats), 1)
             state_with_action = self.action_state_project(state_action_embed)
             state_with_action = self.action_LayerNorm(state_with_action)
-            state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:,1:,:]), dim=1)
-
-            if mp_feats is not None:
-                _, _, _, _, language_attn_probs = self.vln_bert(mode, state_feats,
-                                                                attention_mask=attention_mask,
-                                                                lang_mask=lang_mask,
-                                                                vis_mask=torch.ones((args.batchSize, 1)).cuda(),
-                                                                img_feats=mp_feats)
-
-                state_feats = torch.cat((state_with_action.unsqueeze(1), language_attn_probs * sentence[:, 1:, :]), dim=1)
-
-            # cand_feats_clone = cand_feats.clone()
+            state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:, 1:, :]), dim=1)
 
             # if cand_mp_feats is not None:
             #     if args.mix_type == 'alpha':

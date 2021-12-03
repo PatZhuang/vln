@@ -156,7 +156,8 @@ class Seq2SeqAgent(BaseAgent):
                                               warmup_steps=5,
                                               max_lr=opt.param_groups[0]['lr'],
                                               min_lr=opt.param_groups[0]['lr'] * 0.01,
-                                              cycle_mult=2)
+                                              cycle_mult=2,
+                                              gamma=1)
                 for opt in self.optimizers
             ]
 
@@ -253,6 +254,10 @@ class Seq2SeqAgent(BaseAgent):
                                                  args.feature_size:args.feature_size + 4]  # [sin(heading), cos(heading), sin(elev), cos(elev)]
                 if args.max_pool_feature:
                     candidate_mp_feat[i, j, :] = cc['mp_feature']
+            # assign max pooled feature of current viewpoint to the 'end'
+            if args.max_pool_feature:
+                candidate_feat[i, -1, :args.feature_size] = ob['mp_feature']
+                candidate_feat[i, -1, args.feature_size:] = utils.angle_feature(ob['heading'], ob['elevation'])
 
         candidate_variable = {
             'candidate_feat': torch.from_numpy(candidate_feat).cuda(),
@@ -476,6 +481,7 @@ class Seq2SeqAgent(BaseAgent):
                 mp_feat = input_feat['mp_feat']
             else:
                 candidate_mp_feat = None
+                mp_feat = None
 
             ''' Visual BERT '''
             visual_inputs = {'mode': 'visual',
