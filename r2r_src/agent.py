@@ -132,22 +132,25 @@ class Seq2SeqAgent(BaseAgent):
             self.optimizers.append(self.gaussian_bias_FC_optimizer)
 
         if args.pg_weight is not None:
-            self.chunk_start_FC = nn.Sequential(
+            # self.sub_instr_start_FC = nn.Sequential(
+            #     nn.Linear(self.vln_bert.vln_bert.config.hidden_size, args.maxInput-1),
+            #     nn.ReLU()
+            # ).cuda()
+            self.sub_instr_start_FC = nn.Linear(self.vln_bert.vln_bert.config.hidden_size, args.maxInput - 1).cuda()
+            self.sub_instr_len_FC = nn.Sequential(
                 nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
                 nn.ReLU()
             ).cuda()
-            self.chunk_len_FC = nn.Sequential(
-                nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
-                nn.ReLU()
-            ).cuda()
-            self.chunk_start_FC_optimizer = torch.optim.SGD(self.chunk_start_FC.parameters(), lr=args.lr)
-            self.chunk_len_FC_optimizer = torch.optim.SGD(self.chunk_len_FC.parameters(), lr=args.lr)
-            self.models.append(self.chunk_start_FC)
-            self.models.append(self.chunk_len_FC)
+            self.chunk_start_FC_optimizer = torch.optim.SGD(self.sub_instr_start_FC.parameters(), lr=args.lr)
+            self.chunk_len_FC_optimizer = torch.optim.SGD(self.sub_instr_len_FC.parameters(), lr=args.lr)
+            self.models.append(self.sub_instr_start_FC)
+            self.models.append(self.sub_instr_len_FC)
             self.optimizers.append(self.chunk_start_FC_optimizer)
             self.optimizers.append(self.chunk_len_FC_optimizer)
 
-            self.sub_instr_criterion = nn.L1Loss(reduction='sum')
+            self.sub_instr_FC_criterion = nn.CrossEntropyLoss(reduction='sum')
+            # self.sub_instr_FC_criterion = nn.L1Loss(reduction='sum')
+            self.sub_instr_len_criterion = nn.L1Loss(reduction='sum')
 
         if args.visualize:
             self.visualization_log = {}
@@ -175,7 +178,7 @@ class Seq2SeqAgent(BaseAgent):
                                               max_lr=opt.param_groups[0]['lr'],
                                               min_lr=opt.param_groups[0]['lr'] * 0.01,
                                               cycle_mult=2,
-                                              gamma=0.5)
+                                              gamma=1.0)
                 for opt in self.optimizers
             ]
 
@@ -526,13 +529,16 @@ class Seq2SeqAgent(BaseAgent):
 
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
-            # assert not torch.isnan(logit).any()
 
             if self.feedback == 'teacher' and args.pg_weight is not None:
                 sub_instr_start_gt = []
                 sub_instr_len_gt = []
-                sub_instr_start_pred = self.chunk_start_FC(h_t)
-                sub_instr_len_pred = self.chunk_len_FC(h_t)
+
+                sub_instr_start_pred = self.sub_instr_start_FC(h_t)
+                sub_instr_start_pred.masked_fill_((1 - language_attention_mask[:, 1:]).bool(), -float('inf'))
+                sub_instr_start_pred = F.softmax(sub_instr_start_pred)
+
+                sub_instr_len_pred = self.sub_instr_len_FC(h_t)
 
                 if 'chunk_view' in perm_obs[0]:
                     current_ts = t + 1
@@ -551,21 +557,28 @@ class Seq2SeqAgent(BaseAgent):
                         sub_instr_start_gt.append(ob['sub_instr_index'][chunk_start_ind][0])
                         sub_instr_len_gt.append(ob['sub_instr_index'][chunk_end_ind][1] - sub_instr_start_gt[-1])
 
-                    sub_instr_start_gt = torch.tensor(sub_instr_start_gt).cuda().view(sub_instr_start_pred.shape)
+                    # sub_instr_start_gt = torch.tensor(sub_instr_start_gt).cuda().view(sub_instr_start_pred.shape)
+                    sub_instr_start_gt = torch.tensor(sub_instr_start_gt).cuda()
                     sub_instr_len_gt = torch.tensor(sub_instr_len_gt).cuda().view(sub_instr_len_pred.shape)
 
-                    start_loss += self.sub_instr_criterion(sub_instr_start_pred, sub_instr_start_gt)
-                    len_loss += self.sub_instr_criterion(sub_instr_len_pred, sub_instr_len_gt)
+                    # instruction length > args.maxInput - 1 should be clipped
+                    instr_clip_mask = torch.where(sub_instr_start_gt > args.maxInput - 2)
+                    sub_instr_start_gt[instr_clip_mask] = args.maxInput - 2
+                    sub_instr_len_gt[instr_clip_mask] = 1
+
+                    start_loss += self.sub_instr_FC_criterion(sub_instr_start_pred, sub_instr_start_gt)
+                    len_loss += self.sub_instr_len_criterion(sub_instr_len_pred, sub_instr_len_gt)
                 else:
-                    sub_instr_start_gt = sub_instr_start_pred.int()
+                    # sub_instr_start_gt = sub_instr_start_pred.int()
+                    sub_instr_start_gt = sub_instr_start_pred.argmax(1)
                     sub_instr_len_gt = sub_instr_len_pred.int()
 
                 for i in range(batch_size):
-                    attn_sum = torch.sum(language_attn_probs[i][sub_instr_start_gt[i] : sub_instr_start_gt[i] + sub_instr_len_gt[i]])
-                    if attn_sum < 0.8:  # margin
-                        attn_loss = attn_loss + attn_sum
-                    else:
+                    attn_sum = torch.sum(language_attn_probs[i][sub_instr_start_gt[i]:sub_instr_start_gt[i]+sub_instr_len_gt[i]])
+                    if attn_sum >= 0.8:
                         attn_loss = attn_loss + torch.tensor(0.).cuda()
+                    else:
+                        attn_loss += (1 - attn_sum)
 
             # if self.feedback == 'teacher' and args.pg_weight is not None:
             #     progress_pred = torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)
@@ -814,8 +827,12 @@ class Seq2SeqAgent(BaseAgent):
                     self.loss += len_loss * args.pg_weight / batch_size
                     self.logs['Start_loss'].append((start_loss * args.pg_weight / batch_size).item())
                     self.logs['Len_loss'].append((len_loss * args.pg_weight / batch_size).item())
-                self.loss += attn_loss * args.pg_weight / batch_size
-                self.logs['Attn_loss'].append((attn_loss * args.pg_weight / batch_size).item())
+                    self.loss += attn_loss * args.pg_weight / batch_size
+                    self.logs['Attn_loss'].append((attn_loss * args.pg_weight / batch_size).item())
+                else:
+                    self.loss += attn_loss * args.pg_weight / batch_size
+                    self.logs['Attn_loss'].append((attn_loss * args.pg_weight / batch_size).item())
+
 
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)
