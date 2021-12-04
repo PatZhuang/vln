@@ -139,6 +139,9 @@ class R2RBatch():
                             new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
                             new_item['instructions'] = instr
 
+                            new_item['chunk_view'] = item['chunk_view'][j]
+                            new_item['sub_instr_index'] = item['sub_instr_index'][j]
+
                             ''' BERT tokenizer '''
                             instr_tokens = tokenizer.tokenize(instr)
                             padded_instr_tokens, num_words = pad_instr_tokens(instr_tokens, args.maxInput)
@@ -385,6 +388,9 @@ class R2RBatch():
                 obs[-1]['instr_encoding'] = item['instr_encoding']
             if self.mp_feature is not None:
                 obs[-1]['mp_feature'] = self.mp_feature['_'.join([state.scanId, state.location.viewpointId])]
+            if 'chunk_view' in item:
+                obs[-1]['chunk_view'] = item['chunk_view']
+                obs[-1]['sub_instr_index'] = item['sub_instr_index']
 
             # A2C reward. The negative distance between the state and the final state
             obs[-1]['distance'] = self.distances[state.scanId][state.location.viewpointId][item['path'][-1]]

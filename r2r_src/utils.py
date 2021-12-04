@@ -75,7 +75,7 @@ def load_datasets(splits):
         # if split in ['train', 'val_seen', 'val_unseen', 'test',
         #              'val_unseen_half1', 'val_unseen_half2', 'val_seen_half1', 'val_seen_half2']:       # Add two halves for sanity check
         if "/" not in split:
-            with open('data/R2R_%s.json' % split) as f:
+            with open('data/FGR2R_%s_index.json' % split) as f:
                 new_data = json.load(f)
         else:
             print('\nLoading prevalent data for pretraining...')
