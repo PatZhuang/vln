@@ -19,8 +19,6 @@ import os
 import random
 import networkx as nx
 from param import args
-import cv2
-from PIL import Image
 
 from utils import load_datasets, load_nav_graphs, pad_instr_tokens
 

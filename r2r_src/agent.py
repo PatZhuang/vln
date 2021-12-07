@@ -132,11 +132,30 @@ class Seq2SeqAgent(BaseAgent):
             self.optimizers.append(self.gaussian_bias_FC_optimizer)
 
         if args.pg_weight is not None:
-            # self.sub_instr_start_FC = nn.Sequential(
-            #     nn.Linear(self.vln_bert.vln_bert.config.hidden_size, args.maxInput-1),
-            #     nn.ReLU()
-            # ).cuda()
-            self.sub_instr_start_FC = nn.Linear(self.vln_bert.vln_bert.config.hidden_size, args.maxInput - 1).cuda()
+            if args.pg_lstm:
+                self.sub_instr_start_lstm = nn.LSTMCell(self.vln_bert.vln_bert.config.hidden_size,
+                                                        self.vln_bert.vln_bert.config.hidden_size).cuda()
+                self.sub_instr_len_lstm = nn.LSTMCell(self.vln_bert.vln_bert.config.hidden_size,
+                                                        self.vln_bert.vln_bert.config.hidden_size).cuda()
+                self.models.append(self.sub_instr_start_lstm)
+                self.models.append(self.sub_instr_len_lstm)
+                self.sub_instr_start_lstm_optimizer = torch.optim.SGD(self.sub_instr_start_lstm.parameters(),
+                                                                      lr=args.lr)
+                self.sub_instr_len_lstm_optimizer = torch.optim.SGD(self.sub_instr_len_lstm.parameters(),
+                                                                      lr=args.lr)
+                self.optimizers.append(self.sub_instr_start_lstm_optimizer)
+                self.optimizers.append(self.sub_instr_len_lstm_optimizer)
+
+            if args.pg_regression:
+                self.sub_instr_start_FC = nn.Sequential(
+                    nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
+                    nn.ReLU()
+                ).cuda()
+                self.sub_instr_FC_criterion = nn.L1Loss(reduction='sum')
+            else:
+                self.sub_instr_start_FC = nn.Linear(self.vln_bert.vln_bert.config.hidden_size, args.maxInput - 1).cuda()
+                self.sub_instr_FC_criterion = nn.CrossEntropyLoss(reduction='sum')
+
             self.sub_instr_len_FC = nn.Sequential(
                 nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
                 nn.ReLU()
@@ -148,8 +167,6 @@ class Seq2SeqAgent(BaseAgent):
             self.optimizers.append(self.chunk_start_FC_optimizer)
             self.optimizers.append(self.chunk_len_FC_optimizer)
 
-            self.sub_instr_FC_criterion = nn.CrossEntropyLoss(reduction='sum')
-            # self.sub_instr_FC_criterion = nn.L1Loss(reduction='sum')
             self.sub_instr_len_criterion = nn.L1Loss(reduction='sum')
 
         if args.visualize:
@@ -170,7 +187,7 @@ class Seq2SeqAgent(BaseAgent):
                 torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda_DASA)
                 for opt in self.optimizers
             ]
-        else:
+        elif args.lr_adjust_type == 'cosine':
             self.schedulers = [
                 CosineAnnealingWarmupRestarts(opt,
                                               first_cycle_steps=20,
@@ -471,7 +488,7 @@ class Seq2SeqAgent(BaseAgent):
         len_loss = 0.
         attn_loss = 0.
 
-        if args.visualize:
+        if args.visualize and self.env.name not in ['train', 'aug']:
             for i, ob in enumerate(perm_obs):
                 self.visualization_log[ob['instr_id']] = {
                     'language_attn_prob': [],
@@ -519,11 +536,10 @@ class Seq2SeqAgent(BaseAgent):
                              }
 
             h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
-            assert not torch.isnan(h_t).any()
             language_attn_probs = language_attn_probs.view(batch_size, -1)
             hidden_states.append(h_t)
 
-            if args.visualize:
+            if args.visualize and self.env.name not in ['train', 'aug']:
                 for i, ob in enumerate(perm_obs):
                     self.visualization_log[ob['instr_id']]['language_attn_prob'].append(language_attn_probs[i, :].detach().cpu().numpy())
 
@@ -534,11 +550,25 @@ class Seq2SeqAgent(BaseAgent):
                 sub_instr_start_gt = []
                 sub_instr_len_gt = []
 
-                sub_instr_start_pred = self.sub_instr_start_FC(h_t)
-                sub_instr_start_pred.masked_fill_((1 - language_attention_mask[:, 1:]).bool(), -float('inf'))
-                sub_instr_start_pred = F.softmax(sub_instr_start_pred)
+                if args.pg_lstm:
+                    if t == 0:
+                        # h_t, c_t for sub_instr_start_lstm
+                        h_t_sis = torch.zeros(batch_size, self.vln_bert.vln_bert.config.hidden_size).cuda()
+                        c_t_sis = torch.zeros(batch_size, self.vln_bert.vln_bert.config.hidden_size).cuda()
+                        # h_t, c_t for sub_instr_len_lstm
+                        h_t_sil = torch.zeros(batch_size, self.vln_bert.vln_bert.config.hidden_size).cuda()
+                        c_t_sil = torch.zeros(batch_size, self.vln_bert.vln_bert.config.hidden_size).cuda()
+                    h_t_sis, c_t_sis = self.sub_instr_start_lstm(h_t, (h_t_sis, c_t_sis))
+                    h_t_sil, c_t_sil = self.sub_instr_len_lstm(h_t, (h_t_sil, c_t_sil))
+                    sub_instr_start_pred = self.sub_instr_start_FC(h_t_sis)
+                    sub_instr_len_pred = self.sub_instr_len_FC(h_t_sil)
+                else:
+                    sub_instr_start_pred = self.sub_instr_start_FC(h_t)
+                    sub_instr_len_pred = self.sub_instr_len_FC(h_t)
 
-                sub_instr_len_pred = self.sub_instr_len_FC(h_t)
+                if not args.pg_regression:
+                    sub_instr_start_pred.masked_fill_((1 - language_attention_mask[:, 1:]).bool(), -float('inf'))
+                    sub_instr_start_pred = F.softmax(sub_instr_start_pred)
 
                 if 'chunk_view' in perm_obs[0]:
                     current_ts = t + 1
@@ -557,8 +587,10 @@ class Seq2SeqAgent(BaseAgent):
                         sub_instr_start_gt.append(ob['sub_instr_index'][chunk_start_ind][0])
                         sub_instr_len_gt.append(ob['sub_instr_index'][chunk_end_ind][1] - sub_instr_start_gt[-1])
 
-                    # sub_instr_start_gt = torch.tensor(sub_instr_start_gt).cuda().view(sub_instr_start_pred.shape)
-                    sub_instr_start_gt = torch.tensor(sub_instr_start_gt).cuda()
+                    if args.pg_regression:
+                        sub_instr_start_gt = torch.tensor(sub_instr_start_gt).cuda().view(sub_instr_start_pred.shape)
+                    else:
+                        sub_instr_start_gt = torch.tensor(sub_instr_start_gt).cuda()
                     sub_instr_len_gt = torch.tensor(sub_instr_len_gt).cuda().view(sub_instr_len_pred.shape)
 
                     # instruction length > args.maxInput - 1 should be clipped
@@ -569,8 +601,10 @@ class Seq2SeqAgent(BaseAgent):
                     start_loss += self.sub_instr_FC_criterion(sub_instr_start_pred, sub_instr_start_gt)
                     len_loss += self.sub_instr_len_criterion(sub_instr_len_pred, sub_instr_len_gt)
                 else:
-                    # sub_instr_start_gt = sub_instr_start_pred.int()
-                    sub_instr_start_gt = sub_instr_start_pred.argmax(1)
+                    if args.pg_regression:
+                        sub_instr_start_gt = sub_instr_start_pred.int()
+                    else:
+                        sub_instr_start_gt = sub_instr_start_pred.argmax(1)
                     sub_instr_len_gt = sub_instr_len_pred.int()
 
                 for i in range(batch_size):

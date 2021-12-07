@@ -1,14 +1,14 @@
 # Recurrent VLN-BERT, 2020, by Yicong.Hong@anu.edu.au
 
-from transformers import (BertConfig, BertTokenizerFast)
+from transformers import (BertConfig, BertTokenizer)
 
 def get_tokenizer(args):
     if args.vlnbert == 'oscar':
-        tokenizer_class = BertTokenizerFast
+        tokenizer_class = BertTokenizer
         model_name_or_path = 'Oscar/pretrained_models/base-no-labels/ep_67_588997'
         tokenizer = tokenizer_class.from_pretrained(model_name_or_path, do_lower_case=True)
     elif args.vlnbert == 'prevalent':
-        tokenizer_class = BertTokenizerFast
+        tokenizer_class = BertTokenizer
         tokenizer = tokenizer_class.from_pretrained('bert-base-uncased', local_files_only=True)
     return tokenizer
 

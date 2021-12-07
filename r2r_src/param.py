@@ -20,6 +20,8 @@ class Param:
         self.parser.add_argument("--finetune", action="store_const", default=False, const=True)
         self.parser.add_argument("--gaussian", action="store_const", default=False, const=True)
         self.parser.add_argument("--gaussian_bias", action="store_const", default=False, const=True)
+        self.parser.add_argument("--pg_regression", action="store_const", default=False, const=True)
+        self.parser.add_argument("--pg_lstm", action="store_const", default=False, const=True)
 
         # Augmented Paths from
         self.parser.add_argument("--aug", default=None)
