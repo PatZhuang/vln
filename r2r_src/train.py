@@ -154,11 +154,14 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
                 attn_pos_cnt = np.zeros((args.maxAction, args.maxInput - 1))
                 attn_pos_heatmap = np.zeros((args.maxAction, args.maxInput - 1))
                 vis_log = listner.visualization_log
-                traj_dict = {r['instr_id']:r['trajectory'] for r in result}
-                for path_id in traj_dict.keys():
-                    for i, prob in enumerate(vis_log[path_id]['language_attn_prob']):
+                traj_dict = {r['instr_id']: r['trajectory'] for r in result}
+                for instr_id in traj_dict.keys():
+                    for i, prob in enumerate(vis_log[instr_id]['language_attn_prob']):
+                        if i >= args.maxAction:
+                            print('path length exceeds max action: %s, %s' % (env_name, instr_id))
+                            break
                         attn_pos_heatmap[i] += prob
-                        attn_pos_cnt[i] += (np.arange(args.maxInput - 1) < (vis_log[path_id]['seq_length'] - 1))
+                        attn_pos_cnt[i] += (np.arange(args.maxInput - 1) < (vis_log[instr_id]['seq_length'] - 1))
                 attn_pos_heatmap /= attn_pos_cnt
                 fig = plt.figure()
                 heatmap = sns.heatmap(attn_pos_heatmap,
