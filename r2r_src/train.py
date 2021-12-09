@@ -106,10 +106,10 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         RL_loss = sum(listner.logs['RL_loss']) / max(len(listner.logs['RL_loss']), 1)
         IL_loss = sum(listner.logs['IL_loss']) / max(len(listner.logs['IL_loss']), 1)
         PG_loss = sum(listner.logs['PG_loss']) / max(len(listner.logs['PG_loss']), 1)
-        Start_loss = sum(listner.logs['Start_loss']) / max(len(listner.logs['Start_loss']), 1)
-        Len_loss = sum(listner.logs['Len_loss']) / max(len(listner.logs['Len_loss']), 1)
         Attn_loss = sum(listner.logs['Attn_loss']) / max(len(listner.logs['Attn_loss']), 1)
-        # AP_loss = sum(listner.logs['AP_loss']) / max(len(listner.logs['AP_loss']), 1)
+        Shift_loss = sum(listner.logs['Shift_loss']) / max(len(listner.logs['Shift_loss']), 1)
+        Path_pg_loss = sum(listner.logs['Path_pg_loss']) / max(len(listner.logs['Path_pg_loss']), 1)
+        Instr_pg_loss = sum(listner.logs['Instr_pg_loss']) / max(len(listner.logs['Instr_pg_loss']), 1)
         entropy = sum(listner.logs['entropy']) / total
         if not args.finetune:
             lr = listner.logs['loss/lr'][-1]
@@ -119,10 +119,10 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         writer.add_scalar("loss/RL_loss", RL_loss, idx)
         writer.add_scalar("loss/IL_loss", IL_loss, idx)
         writer.add_scalar("loss/PG_loss", PG_loss, idx)
-        writer.add_scalar("loss/Start_loss", Start_loss, idx)
-        writer.add_scalar("loss/Attn_loss", Start_loss, idx)
-        writer.add_scalar("loss/Len_loss", Len_loss, idx)
-        # writer.add_scalar("loss/AP_loss", AP_loss, idx)
+        writer.add_scalar("loss/Attn_loss", Attn_loss, idx)
+        writer.add_scalar("loss/Shift_loss", Shift_loss, idx)
+        writer.add_scalar("loss/Instr_pg_loss", Instr_pg_loss, idx)
+        writer.add_scalar("loss/Path_pg_loss", Path_pg_loss, idx)
         writer.add_scalar("total_actions", total, idx)
         writer.add_scalar("max_length", length, idx)
 

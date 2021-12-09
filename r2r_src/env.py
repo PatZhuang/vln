@@ -137,8 +137,9 @@ class R2RBatch():
                             new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
                             new_item['instructions'] = instr
 
-                            new_item['chunk_view'] = item['chunk_view'][j]
-                            new_item['sub_instr_index'] = item['sub_instr_index'][j]
+                            if 'chunk_view' in item:
+                                new_item['chunk_view'] = item['chunk_view'][j]
+                                new_item['sub_instr_index'] = item['sub_instr_index'][j]
 
                             ''' BERT tokenizer '''
                             instr_tokens = tokenizer.tokenize(instr)

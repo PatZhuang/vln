@@ -53,6 +53,7 @@ class Param:
         self.parser.add_argument('--lr', type=float, default=0.00001, help="the learning rate")
         self.parser.add_argument('--decay', dest='weight_decay', type=float, default=0.)
         self.parser.add_argument('--gaussian_lr', type=float, default=0.00001, help="the learning rate")
+        self.parser.add_argument('--pg_lr', type=float, default=0.0001, help="the learning rate")
 
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
