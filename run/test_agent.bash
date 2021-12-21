@@ -1,4 +1,4 @@
-name=VLNBERT-PREVALENT-original
+name=test
 
 flag="--vlnbert prevalent
 
@@ -6,7 +6,7 @@ flag="--vlnbert prevalent
       --test_only 0
 
       --train validlistener
-      --load snap/VLNBERT-PREVALENT-final/state_dict/best_val_unseen
+      --load snap/cvpr-clip-w0.5/state_dict/best_val_unseen
 
       --features places365
       --maxAction 15
@@ -21,6 +21,8 @@ flag="--vlnbert prevalent
       --angleFeatSize 128
       --featdropout 0.4
       --dropout 0.5
+
+      --clip_loss 1.0
 
       --visualize"
 

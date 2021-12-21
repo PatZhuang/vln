@@ -1,4 +1,4 @@
-name=cvpr-baseline-pg-gaussian-bias
+name=cvpr-pg-instrattn-w1-mp-mpend
 
 flag="--vlnbert prevalent
 
@@ -21,12 +21,13 @@ flag="--vlnbert prevalent
       --featdropout 0.4
       --dropout 0.5
 
-      --pgWeight 1.0
-      --gaussian
-      --gaussian_bias
+      --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
+      --mp_end
+
+      --pgWeight 1
       --visualize
       "
 
 mkdir -p snap/$name
-CUDA_VISIBLE_DEVICES=3 python r2r_src/train.py $flag --name $name
+CUDA_VISIBLE_DEVICES=5 python r2r_src/train.py $flag --name $name
 

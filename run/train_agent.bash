@@ -1,4 +1,4 @@
-name=cvpr-baseline-pg-ap
+name=cvpr-baseline-newlr
 
 flag="--vlnbert prevalent
 
@@ -21,7 +21,6 @@ flag="--vlnbert prevalent
       --featdropout 0.4
       --dropout 0.5
 
-      --pgWeight 1.0
       "
 
 mkdir -p snap/$name

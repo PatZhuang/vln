@@ -17,6 +17,9 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from transformers import BertPreTrainedModel, BertConfig
 import pdb
 
+sys.path.append('..')
+from param import args
+
 
 logger = logging.getLogger(__name__)
 
@@ -254,9 +257,10 @@ class BertOutAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        # dynamic temperature
-        self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
-        self.temp_act = nn.ReLU()
+        if args.xdyt:
+            # dynamic temperature
+            self.temp_fc = nn.Linear(config.hidden_size // config.num_attention_heads, 1)
+            self.temp_act = nn.ReLU()
 
         # visual_dim = 2048
         if ctx_dim is None:
@@ -285,9 +289,10 @@ class BertOutAttention(nn.Module):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
-        # dynamic temperature
-        dy_t = self.temp_act(self.temp_fc(query_layer))
-        attention_scores = attention_scores * dy_t
+        if args.xdyt:
+            # dynamic temperature
+            dy_t = self.temp_act(self.temp_fc(query_layer))
+            attention_scores = attention_scores * dy_t
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         if attention_mask is not None:
@@ -388,7 +393,8 @@ class VLNBert(BertPreTrainedModel):
         self.embeddings = BertEmbeddings(config)
         self.pooler = BertPooler(config)
 
-        self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
+        if args.object:
+            self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
 
         self.img_dim = config.img_feature_dim            # 2176
         logger.info('VLNBert Image Dimension: {}'.format(self.img_dim))
@@ -413,17 +419,18 @@ class VLNBert(BertPreTrainedModel):
 
         extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
 
-        extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
+        extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
         if mode == 'language':
             ''' LXMERT language branch (in VLN only perform this at initialization) '''
             embedding_output = self.embeddings(input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
-
-            # for object tag matching
-            token_embed = self.token_embedding(input_ids)
-
             text_embeds = embedding_output
+
+            if args.object:     # for object tag matching
+                token_embed = self.token_embedding(input_ids)
+            else:
+                token_embed = None
 
             for layer_module in self.lalayer:
                 temp_output = layer_module(text_embeds, extended_attention_mask)
@@ -453,9 +460,6 @@ class VLNBert(BertPreTrainedModel):
             text_mask = extended_attention_mask
 
             img_embedding_output = self.vision_encoder(img_feats)
-            img_seq_len = img_feats.shape[1]
-            batch_size = text_embeds.size(0)
-
             img_seq_mask = vis_mask
 
             extended_img_mask = img_seq_mask.unsqueeze(1).unsqueeze(2)
@@ -467,7 +471,11 @@ class VLNBert(BertPreTrainedModel):
             visn_output = img_embedding_output
 
             for tdx, layer_module in enumerate(self.addlayer):
-                lang_output, visn_output, language_attention_scores, visual_attention_scores = layer_module(lang_output, text_mask, visn_output, img_mask, tdx)
+                lang_output, visn_output, language_attention_scores, visual_attention_scores = layer_module(lang_output,
+                                                                                                            text_mask,
+                                                                                                            visn_output,
+                                                                                                            img_mask,
+                                                                                                            tdx)
 
             sequence_output = lang_output
             pooled_output = self.pooler(sequence_output)
@@ -475,7 +483,6 @@ class VLNBert(BertPreTrainedModel):
             language_state_scores = language_attention_scores.mean(dim=1)
             visual_action_scores = visual_attention_scores.mean(dim=1)
 
-            # weighted_feat
             language_attention_probs = nn.Softmax(dim=-1)(language_state_scores.clone()).unsqueeze(-1)
             visual_attention_probs = nn.Softmax(dim=-1)(visual_action_scores.clone()).unsqueeze(-1)
 

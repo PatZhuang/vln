@@ -96,8 +96,7 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
                 listner.train(1, feedback=feedback_method)
 
                 print_progress(jdx, jdx_length, prefix='Progress:', suffix='Complete', bar_length=50)
-        if not args.finetune:
-            listner.adjust_lr()
+        listner.adjust_lr()
 
         # Log the training stats to tensorboard
         total = max(sum(listner.logs['total']), 1)
@@ -105,24 +104,25 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         critic_loss = sum(listner.logs['critic_loss']) / total
         RL_loss = sum(listner.logs['RL_loss']) / max(len(listner.logs['RL_loss']), 1)
         IL_loss = sum(listner.logs['IL_loss']) / max(len(listner.logs['IL_loss']), 1)
-        PG_loss = sum(listner.logs['PG_loss']) / max(len(listner.logs['PG_loss']), 1)
-        Attn_loss = sum(listner.logs['Attn_loss']) / max(len(listner.logs['Attn_loss']), 1)
-        Shift_loss = sum(listner.logs['Shift_loss']) / max(len(listner.logs['Shift_loss']), 1)
-        Path_pg_loss = sum(listner.logs['Path_pg_loss']) / max(len(listner.logs['Path_pg_loss']), 1)
-        Instr_pg_loss = sum(listner.logs['Instr_pg_loss']) / max(len(listner.logs['Instr_pg_loss']), 1)
+        # PG_loss = sum(listner.logs['PG_loss']) / max(len(listner.logs['PG_loss']), 1)
+        # Attn_loss = sum(listner.logs['Attn_loss']) / max(len(listner.logs['Attn_loss']), 1)
+        # Shift_loss = sum(listner.logs['Shift_loss']) / max(len(listner.logs['Shift_loss']), 1)
+        # Path_pg_loss = sum(listner.logs['Path_pg_loss']) / max(len(listner.logs['Path_pg_loss']), 1)
+        # Instr_pg_loss = sum(listner.logs['Instr_pg_loss']) / max(len(listner.logs['Instr_pg_loss']), 1)
+        # Clip_loss = sum(listner.logs['Clip_loss']) / max(len(listner.logs['Clip_loss']), 1)
         entropy = sum(listner.logs['entropy']) / total
-        if not args.finetune:
-            lr = listner.logs['loss/lr'][-1]
-            writer.add_scalar('loss/lr', lr, idx)
+        lr = listner.logs['loss/lr'][-1]
+        writer.add_scalar('loss/lr', lr, idx)
         writer.add_scalar("loss/critic", critic_loss, idx)
         writer.add_scalar("policy_entropy", entropy, idx)
         writer.add_scalar("loss/RL_loss", RL_loss, idx)
         writer.add_scalar("loss/IL_loss", IL_loss, idx)
-        writer.add_scalar("loss/PG_loss", PG_loss, idx)
-        writer.add_scalar("loss/Attn_loss", Attn_loss, idx)
-        writer.add_scalar("loss/Shift_loss", Shift_loss, idx)
-        writer.add_scalar("loss/Instr_pg_loss", Instr_pg_loss, idx)
-        writer.add_scalar("loss/Path_pg_loss", Path_pg_loss, idx)
+        # writer.add_scalar("loss/PG_loss", PG_loss, idx)
+        # writer.add_scalar("loss/Attn_loss", Attn_loss, idx)
+        # writer.add_scalar("loss/Shift_loss", Shift_loss, idx)
+        # writer.add_scalar("loss/Instr_pg_loss", Instr_pg_loss, idx)
+        # writer.add_scalar("loss/Path_pg_loss", Path_pg_loss, idx)
+        # writer.add_scalar("loss/Clip_loss", Clip_loss, idx)
         writer.add_scalar("total_actions", total, idx)
         writer.add_scalar("max_length", length, idx)
 
@@ -252,12 +252,6 @@ def train_val(test_only=False):
     else:
         mp_feat_dict = None
 
-    if args.look_back_feature:
-        with open(str(args.look_back_feature), 'rb') as f:
-            lb_feat_dict = pkl.load(f)
-    else:
-        lb_feat_dict = None
-
     if test_only:
         featurized_scans = None
         val_env_names = ['val_train_seen']
@@ -273,7 +267,7 @@ def train_val(test_only=False):
         obj_store = pkl.load(f)
 
     train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store,
-                         mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
+                         mp_feature_store=mp_feat_dict)
     from collections import OrderedDict
 
     if args.submit:
@@ -315,12 +309,6 @@ def train_val_augment(test_only=False):
     else:
         mp_feat_dict = None
 
-    if args.look_back_feature:
-        with open(str(args.look_back_feature), 'rb') as f:
-            lb_feat_dict = pkl.load(f)
-    else:
-        lb_feat_dict = None
-
     if test_only:
         featurized_scans = None
         val_env_names = []
@@ -339,13 +327,13 @@ def train_val_augment(test_only=False):
     aug_path = args.aug
     # Create the training environment
     train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok_bert, obj_store=obj_store,
-                         mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
+                         mp_feature_store=mp_feat_dict)
     aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[aug_path], tokenizer=tok_bert, name='aug', obj_store=obj_store,
-                         mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict)
+                         mp_feature_store=mp_feat_dict)
 
     # Setup the validation data
     val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok_bert, obj_store=obj_store,
-                                 mp_feature_store=mp_feat_dict, lb_feature_store=lb_feat_dict),
+                                 mp_feature_store=mp_feat_dict),
                 Evaluation([split], featurized_scans, tok_bert))
                 for split in val_env_names}
 

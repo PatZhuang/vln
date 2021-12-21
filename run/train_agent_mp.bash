@@ -1,4 +1,4 @@
-name=VLNBERT-train-Prevalent-baseline-mp-xsdyt
+name=cvpr-mp-newlr
 
 flag="--vlnbert prevalent
 
@@ -20,7 +20,7 @@ flag="--vlnbert prevalent
       --featdropout 0.4
       --dropout 0.5
       --max_pool_feature img_features/ResNet-152-places365-maxpool.pkl
-      --mix_type alpha
+      --visualize
       "
 
 mkdir -p snap/$name

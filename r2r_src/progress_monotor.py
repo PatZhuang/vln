@@ -11,24 +11,17 @@ class PGMonitor(nn.Module):
         self.batch_size = batch_size
         self.hidden_size = hidden_size
 
-        self.shift_h_t = torch.zeros(batch_size, hidden_size)
-        self.shift_c_t = torch.zeros(batch_size, hidden_size)
-        self.shift_instr_lstm = nn.LSTMCell(hidden_size, hidden_size)
-        self.shift_instr_FC = nn.Sequential(
-            nn.Linear(hidden_size, 1),
-            nn.Sigmoid()
+        # output (maxInput - 2) probs indicating if that word should be attended
+        self.instr_attn_layer = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.Linear(hidden_size // 2, args.maxInput - 1),
         )
 
-        self.instr_pg_FC = nn.Linear(hidden_size, 1)
-        self.path_pg_FC = nn.Linear(hidden_size, 1)
+    def forward(self, state, mask):
+        instr_attn_pred = self.instr_attn_layer(state)
+        instr_attn_pred.masked_fill_(mask, -float('inf'))
+        instr_attn_pred = F.sigmoid(instr_attn_pred)
 
-    def forward(self, state):
-        self.shift_h_t, self.shift_c_t = self.shift_instr_lstm(state)
-        shift_pred = self.shift_instr_FC(self.shift_h_t)
-
-        instr_pg_pred = self.instr_pg_FC(state)
-        path_pg_pred = self.path_pg_FC(state)
-
-        return shift_pred, instr_pg_pred, path_pg_pred
+        return instr_attn_pred
 
 

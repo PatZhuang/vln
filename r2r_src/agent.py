@@ -26,6 +26,8 @@ from collections import defaultdict
 from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 
 from progress_monotor import PGMonitor
+from clip import Clip
+from slot_attention import SlotAttention
 
 
 class BaseAgent(object):
@@ -111,38 +113,44 @@ class Seq2SeqAgent(BaseAgent):
         self.models = [self.vln_bert, self.critic]
 
         # Optimizers
-        self.vln_bert_optimizer = args.optimizer(self.vln_bert.parameters(), lr=args.lr)
-        self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
+        self.vln_bert_optimizer = args.optimizer(self.vln_bert.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr, weight_decay=args.weight_decay)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
 
-        # gaussian
-        # if args.gaussian:
-        #     self.gaussian_std_FC = nn.Sequential(
-        #         nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
-        #         nn.Sigmoid()
-        #     ).cuda()
-        #     self.gaussian_std_FC_optimizer = torch.optim.SGD(self.gaussian_std_FC.parameters(), lr=args.gaussian_lr)
-        #     self.models.append(self.gaussian_std_FC)
-        #     self.optimizers.append(self.gaussian_std_FC_optimizer)
-        # if args.gaussian and args.gaussian_bias:
-        #     self.gaussian_bias_FC = nn.Sequential(
-        #         nn.Linear(self.vln_bert.vln_bert.config.hidden_size, 1),
-        #         nn.Tanh()
-        #     ).cuda()
-        #     self.gaussian_bias_FC_optimizer = torch.optim.SGD(self.gaussian_bias_FC.parameters(), lr=args.gaussian_lr)
-        #     self.models.append(self.gaussian_bias_FC)
-        #     self.optimizers.append(self.gaussian_bias_FC_optimizer)
-
         if args.pg_weight is not None:
-            self.pg_monitor = PGMonitor(args.batchSize, self.vln_bert.vln_bert.config.hidden_size).cuda()
-            self.pg_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr)
+            self.pg_monitor = PGMonitor(args.batchSize, hidden_size=768).cuda()
+            self.pg_monitor_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr * 10)
             self.models.append(self.pg_monitor)
-            self.optimizers.append(self.pg_optimizer)
+            self.optimizers.append(self.pg_monitor_optimizer)
 
-            self.shift_criterion = nn.BCELoss(reduction='sum')
-            self.instr_pg_criterion = nn.L1Loss(reduction='sum')
-            self.path_pg_criterion = nn.L1Loss(reduction='sum')
+            self.pg_criterion = nn.BCELoss(reduction='sum')
 
+        if args.clip_weight is not None:
+            if args.clip_after_encoder:
+                self.clip = Clip(batch_size=args.batchSize, input_size=768 * 2, hidden_size=768).cuda()
+            else:
+                self.clip = Clip(batch_size=args.batchSize, input_size=(args.feature_size + args.angle_feat_size)*2, hidden_size=768).cuda()
+            self.clip_optimizer = args.optimizer(self.clip.parameters(), lr=args.lr * 10)
+            self.models.append(self.clip)
+            self.optimizers.append(self.clip_optimizer)
+
+            self.clip_criterion = nn.CrossEntropyLoss(reduction='sum')
+
+        if args.slot_attn:
+            self.slot_attention = SlotAttention(num_slots=1, dim=(args.feature_size + args.angle_feat_size)).cuda()
+            self.slot_optimizer = args.optimizer(self.slot_attention.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+            self.models.append(self.slot_attention)
+            self.optimizers.append(self.slot_optimizer)
+
+        # if args.pg_weight is not None:
+        #     self.pg_monitor = PGMonitor(args.batchSize, self.vln_bert.vln_bert.config.hidden_size).cuda()
+        #     self.pg_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr)
+        #     self.models.append(self.pg_monitor)
+        #     self.optimizers.append(self.pg_optimizer)
+        #
+        #     self.shift_criterion = nn.BCELoss(reduction='sum')
+        #     self.instr_pg_criterion = nn.L1Loss(reduction='sum')
+        #     self.path_pg_criterion = nn.L1Loss(reduction='sum')
 
         if args.visualize:
             self.visualization_log = {}
@@ -165,10 +173,10 @@ class Seq2SeqAgent(BaseAgent):
         elif args.lr_adjust_type == 'cosine':
             self.schedulers = [
                 CosineAnnealingWarmupRestarts(opt,
-                                              first_cycle_steps=20,
+                                              first_cycle_steps=50,
                                               warmup_steps=5,
                                               max_lr=opt.param_groups[0]['lr'],
-                                              min_lr=opt.param_groups[0]['lr'] * 0.01,
+                                              min_lr=opt.param_groups[0]['lr'] * 0.005,
                                               cycle_mult=2,
                                               gamma=1.0)
                 for opt in self.optimizers
@@ -180,8 +188,6 @@ class Seq2SeqAgent(BaseAgent):
         # Evaluations
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
-        if args.gaussian:
-            self.kld_loss = torch.nn.KLDivLoss(reduction='sum')
 
         self.progress_criterion = nn.L1Loss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
@@ -268,7 +274,7 @@ class Seq2SeqAgent(BaseAgent):
                 if args.max_pool_feature:
                     candidate_mp_feat[i, j, :] = cc['mp_feature']
             # assign max pooled feature of current viewpoint to the 'end'
-            if args.max_pool_feature:
+            if args.mp_end:
                 candidate_feat[i, -1, :args.feature_size] = ob['mp_feature']
                 candidate_feat[i, -1, args.feature_size:] = utils.angle_feature(ob['heading'], ob['elevation'])
 
@@ -291,8 +297,11 @@ class Seq2SeqAgent(BaseAgent):
 
     def get_input_feat(self, obs):
         input_a_t = np.zeros((len(obs), args.angle_feat_size), np.float32)
+        pano_feats = np.zeros((len(obs), 36, 2176), np.float32)
         for i, ob in enumerate(obs):
             input_a_t[i] = utils.angle_feature(ob['heading'], ob['elevation'])
+            pano_feats[i] = ob['feature']
+        pano_feats = torch.from_numpy(pano_feats).cuda()
         input_a_t = torch.from_numpy(input_a_t).cuda()
         # f_t = self._feature_variable(obs)      # Pano image features from obs
         candidate_variable = self._candidate_variable(obs)
@@ -303,6 +312,7 @@ class Seq2SeqAgent(BaseAgent):
 
         input_feat = {
             'input_a_t': input_a_t,
+            'pano_feat': pano_feats,
             'cand_feat': candidate_feat,
             'cand_leng': candidate_leng
         }
@@ -465,6 +475,15 @@ class Seq2SeqAgent(BaseAgent):
         path_pg_loss = 0.
         attn_loss = 0.
 
+        if args.clip_weight is not None and train_ml:
+            clip_loss = 0.
+            clip_I_f = [[] for _ in range(batch_size)]
+            clip_T_f = h_t.clone()
+
+        # if args.pg_weight is not None:
+        #     shift_h_t = torch.randn(batch_size, 768)
+        #     shift_c_t = torch.randn(batch_size, 768)
+
         if args.visualize and self.env.name not in ['train', 'aug']:
             for i, ob in enumerate(perm_obs):
                 self.visualization_log[ob['instr_id']] = {
@@ -473,13 +492,14 @@ class Seq2SeqAgent(BaseAgent):
                     'seq_length': seq_lengths[i].detach().item()
                 }
 
-        last_instr_pg_gt = torch.zeros(batch_size).int().cuda()
-        instr_start_gt = torch.zeros(batch_size).int().cuda()
-        traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
+        # last_instr_pg_gt = torch.zeros(batch_size).int().cuda()
+        # instr_start_gt = torch.zeros(batch_size).int().cuda()
+        # traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
 
         for t in range(self.episode_len):
             input_feat = self.get_input_feat(perm_obs)
             input_a_t = input_feat['input_a_t']
+            pano_feat = input_feat['pano_feat']
             candidate_feat = input_feat['cand_feat']
             candidate_leng = input_feat['cand_leng']
 
@@ -503,35 +523,12 @@ class Seq2SeqAgent(BaseAgent):
                 candidate_mp_feat = None
                 mp_feat = None
 
-            ''' Visual BERT '''
-            visual_inputs = {'mode': 'visual',
-                             'sentence': language_features,
-                             'attention_mask': visual_attention_mask,
-                             'lang_mask': language_attention_mask,
-                             'vis_mask': visual_temp_mask,
-                             'token_type_ids': token_type_ids,
-                             'action_feats': input_a_t,
-                             'cand_feats': candidate_feat,
-                             'cand_mp_feats': candidate_mp_feat,
-                             'mp_feats': mp_feat
-                             }
-
-            h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
-            language_attn_probs = language_attn_probs.view(batch_size, -1)
-            hidden_states.append(h_t)
-
-            if args.visualize and self.env.name not in ['train', 'aug']:
-                for i, ob in enumerate(perm_obs):
-                    self.visualization_log[ob['instr_id']]['language_attn_prob'].append(language_attn_probs[i, :].detach().cpu().numpy())
-
-            # Here the logit is [b, max_candidate]
-            logit.masked_fill_(candidate_mask, -float('inf'))
-
             if args.pg_weight is not None:
-                shift_pred, instr_pg_pred, path_pg_pred = self.pg_monitor(h_t)
+                attn_pred_mask = utils.length2mask(seq_lengths.cpu().detach() - 1, args.maxInput - 1)
+                instr_attn_pred = self.pg_monitor(h_t, attn_pred_mask)
 
                 if self.feedback == 'teacher':
-                    instr_pg_gt = torch.zeros(batch_size).cuda().long()
+                    instr_attn_gt = torch.zeros((batch_size, args.maxInput - 1)).cuda()
 
                     if 'chunk_view' in perm_obs[0]:
                         current_ts = t + 1
@@ -547,43 +544,106 @@ class Seq2SeqAgent(BaseAgent):
                                 ind += 1
                             chunk_end_ind = ind
 
-                            instr_pg_gt[i] = ob['sub_instr_index'][chunk_end_ind][1]
+                            instr_start = ob['sub_instr_index'][chunk_end_ind][0]
+                            instr_end = ob['sub_instr_index'][chunk_end_ind][1]
 
-                        instr_clip_mask = torch.where(instr_pg_gt > seq_lengths - 2)
-                        instr_pg_gt[instr_clip_mask] = seq_lengths.view(instr_pg_gt.shape)[instr_clip_mask] - 2
+                            instr_attn_gt[i][instr_start:instr_end+1].fill_(1)
+                            instr_attn_gt[i][seq_lengths[i] - 2] = 1    # [SEP]
+                        instr_pg_loss += self.pg_criterion(instr_attn_pred, instr_attn_gt)
 
-                        shift_gt = (instr_pg_gt != last_instr_pg_gt).float().cuda()
-                        shift_loss += self.shift_criterion(shift_pred, shift_gt.cuda())
+                    lang_feat = language_features * torch.cat([torch.ones(batch_size, 1).cuda(), instr_attn_gt], 1).unsqueeze(-1)
+                else:
+                    lang_feat = language_features * torch.cat([torch.ones(batch_size, 1).cuda(), instr_attn_pred], 1).unsqueeze(-1)
+            else:
+                lang_feat = language_features
 
-                        for i in range(batch_size):
-                            if shift_gt[i].bool():
-                                instr_start_gt[i] = last_instr_pg_gt[i]
-                                last_instr_pg_gt[i] = instr_pg_gt[i]
+            if args.slot_attn:
+                candidate_feat = self.slot_attention(
+                    candidate_feat, pano_feat, candidate_mask,
+                    dropout=args.slot_dropout,
+                )
+                # candidate_feat[..., :-args.angle_feat_size] = self.slot_attention(
+                #     candidate_feat[..., :-args.angle_feat_size].clone(),
+                #     pano_feat[..., :-args.angle_feat_size],
+                #     candidate_mask,
+                #     dropout=args.slot_dropout,
+                #     use_gru=args.slot_gru
+                # )
 
-                                torch.true_divide(instr_pg_pred, seq_lengths[i])
-                                instr_pg_loss += self.instr_pg_criterion(instr_pg_pred[i] * (seq_lengths[i]-2), instr_pg_gt[i].float())
+            ''' Visual BERT '''
+            visual_inputs = {'mode': 'visual',
+                             'sentence': lang_feat,
+                             'attention_mask': visual_attention_mask,
+                             'lang_mask': language_attention_mask,
+                             'vis_mask': visual_temp_mask,
+                             'token_type_ids': token_type_ids,
+                             'action_feats': input_a_t,
+                             'cand_feats': candidate_feat,
+                             'cand_mp_feats': candidate_mp_feat,
+                             'mp_feats': mp_feat
+                             }
 
-                            attn_sum = torch.sum(language_attn_probs[i][instr_start_gt[i]:instr_pg_gt[i] + 1])
-                            if attn_sum >= 0.8:
-                                attn_loss = attn_loss + torch.tensor(0.).cuda()
-                            else:
-                                attn_loss += (1 - attn_sum)
-                    # else:
-                    #     for i in range(batch_size):
-                    #         if t == 0 or shift_pred[i].bool():
-                    #             instr_start_gt[i] = last_instr_pg_gt[i]
-                    #
-                    #             torch.clamp()
-                    #
-                    #             instr_pg_gt[i] = min(seq_lengths[i] - 2, (instr_pg_pred[i] * (seq_lengths[i]-2))).long()
-                    #             last_instr_pg_gt[i] = instr_pg_gt[i]
+            h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
+            language_attn_probs = language_attn_probs.view(batch_size, -1)
+            hidden_states.append(h_t)
 
-                traj_progress = torch.tensor([
-                    self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
-                    for ob in perm_obs
-                ]).cuda()
-                progress_gt = 1 - traj_progress / traj_length
-                path_pg_loss += self.path_pg_criterion(path_pg_pred, progress_gt)
+
+            if args.visualize and self.env.name not in ['train', 'aug']:
+                for i, ob in enumerate(perm_obs):
+                    self.visualization_log[ob['instr_id']]['language_attn_prob'].append(language_attn_probs[i, :].detach().cpu().numpy())
+
+            # Here the logit is [b, max_candidate]
+            logit.masked_fill_(candidate_mask, -float('inf'))
+
+            # if args.pg_weight is not None:
+            #     (shift_pred, shift_h_t, shift_c_t), instr_pg_pred, path_pg_pred = self.pg_monitor(h_t, shift_h_t, shift_c_t)
+            #
+                # if self.feedback == 'teacher':
+                #     instr_pg_gt = torch.zeros(batch_size).cuda().long()
+                #
+                #     if 'chunk_view' in perm_obs[0]:
+                #         current_ts = t + 1
+                #         for i, ob in enumerate(perm_obs):
+                #             chunk_starts, chunk_ends = zip(*ob['chunk_view'])
+                #             if current_ts <= max(chunk_starts):
+                #                 ind = np.where(np.array(chunk_starts) >= current_ts)[0][0]
+                #             else:
+                #                 ind = len(chunk_starts) - 1
+                #
+                #             chunk_start_ind = ind
+                #             while (chunk_ends[ind] == current_ts) and (ind < len(chunk_ends) - 1):
+                #                 ind += 1
+                #             chunk_end_ind = ind
+                #
+                #             instr_pg_gt[i] = ob['sub_instr_index'][chunk_end_ind][1]
+                #
+                #         instr_clip_mask = torch.where(instr_pg_gt > seq_lengths - 2)
+                #         instr_pg_gt[instr_clip_mask] = seq_lengths.view(instr_pg_gt.shape)[instr_clip_mask] - 2
+                #
+                #         shift_gt = (instr_pg_gt != last_instr_pg_gt).float().cuda()
+                #         shift_loss += self.shift_criterion(shift_pred, shift_gt.cuda())
+            #
+            #             for i in range(batch_size):
+            #                 if shift_gt[i].bool():
+            #                     instr_start_gt[i] = last_instr_pg_gt[i]
+            #                     last_instr_pg_gt[i] = instr_pg_gt[i]
+            #
+            #                     torch.true_divide(instr_pg_pred, seq_lengths[i])
+            #                     instr_pg_loss += self.instr_pg_criterion(instr_pg_pred[i] * (seq_lengths[i]-2), instr_pg_gt[i].float())
+            #
+            #                 attn_sum = torch.sum(language_attn_probs[i][instr_start_gt[i]:instr_pg_gt[i] + 1])
+            #                 if attn_sum >= 0.8:
+            #                     attn_loss = attn_loss + torch.tensor(0.).cuda()
+            #                 else:
+            #                     attn_loss += (1 - attn_sum)
+            #
+            #
+            #     traj_progress = torch.tensor([
+            #         self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
+            #         for ob in perm_obs
+            #     ]).cuda()
+            #     progress_gt = 1 - traj_progress / traj_length
+            #     path_pg_loss += self.path_pg_criterion(path_pg_pred, progress_gt)
 
 
             # if self.feedback == 'teacher' and args.pg_weight is not None:
@@ -641,7 +701,7 @@ class Seq2SeqAgent(BaseAgent):
                 object_bbox = input_feat['obj_bbox']
 
                 # mimic straight through gumbel-softmaxsc
-                hard_idx = language_attn_probs.max(-1, keepdim= True)[1]
+                hard_idx = language_attn_probs.max(-1, keepdim=True)[1]
                 hard_prob = torch.zeros_like(language_attn_probs).scatter_(-1, hard_idx, 1.0)
                 language_attn_probs_hard = hard_prob - language_attn_probs.detach() + language_attn_probs
                 sampled_instr = torch.sum((token_embeds * language_attn_probs_hard.unsqueeze(-1)), 1).unsqueeze(1)
@@ -663,8 +723,6 @@ class Seq2SeqAgent(BaseAgent):
             # Supervised training
             target = self._teacher_action(perm_obs, ended)
             ml_loss += self.criterion(logit, target)
-            if args.max_pool_feature and self.feedback != 'argmax':
-                ml_loss += self.criterion(logit, target)
 
             # Determine next model inputs
             if self.feedback == 'teacher':
@@ -739,9 +797,21 @@ class Seq2SeqAgent(BaseAgent):
                 last_dist[:] = dist
                 last_ndtw[:] = ndtw_score
 
+            if args.clip_weight is not None and train_ml:
+                for i in range(batch_size):
+                    if not ended[i]:
+                        if args.clip_after_encoder:
+                            clip_I_f[i].append(torch.cat(
+                                [self.vln_bert.vln_bert.vision_encoder(candidate_feat[i][target[i]]).unsqueeze(0),
+                                 self.vln_bert.vln_bert.vision_encoder(mp_feat[i])], 1))
+                        else:
+                            clip_I_f[i].append(torch.cat([candidate_feat[i][target[i]].unsqueeze(0), mp_feat[i]], 1))
+
             # Update the finished actions
             # -1 means ended or ignored (already ended)
             ended[:] = np.logical_or(ended, (cpu_a_t == -1))
+
+
 
             # Early exit if all ended
             if ended.all():
@@ -751,6 +821,7 @@ class Seq2SeqAgent(BaseAgent):
             # Last action in A2C
             input_feat = self.get_input_feat(perm_obs)
             input_a_t = input_feat['input_a_t']
+            pano_feat = input_feat['pano_feat']
             candidate_feat = input_feat['cand_feat']
             candidate_leng = input_feat['cand_leng']
 
@@ -764,6 +835,19 @@ class Seq2SeqAgent(BaseAgent):
             candidate_mask = utils.length2mask(candidate_leng)
             visual_temp_mask = (utils.length2mask(candidate_leng) == 0).long()
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
+
+            if args.slot_attn:
+                candidate_feat = self.slot_attention(
+                    candidate_feat, pano_feat, candidate_mask,
+                    dropout=args.slot_dropout,
+                )
+                # candidate_feat[..., :-args.angle_feat_size] = self.slot_attention(
+                #     candidate_feat[..., :-args.angle_feat_size].clone(),
+                #     pano_feat[..., :-args.angle_feat_size],
+                #     candidate_mask,
+                #     dropout=args.slot_dropout,
+                #     use_gru=args.slot_gru
+                # )
 
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''
@@ -826,14 +910,20 @@ class Seq2SeqAgent(BaseAgent):
 
             if args.pg_weight is not None:
                 if self.env.name != 'aug':
-                    self.loss += shift_loss * args.pg_weight / batch_size
                     self.loss += instr_pg_loss * args.pg_weight / batch_size
-                    self.loss += attn_loss * args.pg_weight / batch_size
-                    self.logs['Shift_loss'].append((shift_loss * args.pg_weight / batch_size).item())
                     self.logs['Instr_pg_loss'].append((instr_pg_loss * args.pg_weight / batch_size).item())
-                    self.logs['Attn_loss'].append((attn_loss * args.pg_weight / batch_size).item())
-                self.loss += path_pg_loss * args.pg_weight / batch_size
-                self.logs['Path_pg_loss'].append((path_pg_loss * args.pg_weight / batch_size).item())
+
+            if args.clip_weight is not None:
+                clip_I_f = [torch.cat(I_f, 0) for I_f in clip_I_f]
+                # clip_I_f = nn.utils.rnn.pad_sequence(clip_I_f)
+                clip_logit = self.clip(clip_I_f, clip_T_f)
+                clip_target = torch.arange(batch_size).cuda()
+                clip_loss_i = self.clip_criterion(clip_logit, clip_target)
+                clip_loss_t = self.clip_criterion(clip_logit.T, clip_target)
+                clip_loss += (clip_loss_i + clip_loss_t) / 2
+
+                self.loss += clip_loss * args.clip_weight / batch_size
+                self.logs['Clip_loss'].append((clip_loss * args.clip_weight / batch_size).item())
 
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)
@@ -887,6 +977,10 @@ class Seq2SeqAgent(BaseAgent):
 
         for opt in self.optimizers:
             opt.step()
+
+        # clamp cliip temperature between 0 ~ ln(100)
+        if args.clip_weight is not None:
+            self.clip.temperature.data = torch.clamp(self.clip.temperature.data, 0, 4.6052)
 
     def train(self, n_iters, feedback='teacher', **kwargs):
         ''' Train for a given number of iterations '''
@@ -942,6 +1036,12 @@ class Seq2SeqAgent(BaseAgent):
 
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer),
                      ("critic", self.critic, self.critic_optimizer)]
+        if args.clip_weight is not None:
+            all_tuple.append(("clip", self.clip, self.clip_optimizer))
+        if args.pg_weight is not None:
+            all_tuple.append(("pg_monitor", self.pg_monitor, self.pg_monitor_optimizer))
+        if args.slot_attn:
+            all_tuple.append(("slot_attention", self.slot_attention, self.slot_optimizer))
         for param in all_tuple:
             create_state(*param)
         torch.save(states, path)
@@ -963,6 +1063,12 @@ class Seq2SeqAgent(BaseAgent):
 
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer),
                      ("critic", self.critic, self.critic_optimizer)]
+        if args.clip_weight is not None:
+            all_tuple.append(["clip", self.clip, self.clip_optimizer])
+        if args.pg_weight is not None:
+            all_tuple.append(("pg_monitor", self.pg_monitor, self.pg_monitor_optimizer))
+        if args.slot_attn:
+            all_tuple.append(("slot_attention", self.slot_attention, self.slot_optimizer))
         for param in all_tuple:
             recover_state(*param)
         return states['vln_bert']['epoch'] - 1

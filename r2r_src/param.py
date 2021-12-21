@@ -15,13 +15,19 @@ class Param:
         self.parser.add_argument('--description', type=str, default='no description\n')
         self.parser.add_argument('--log_every', type=int, default=2000, help='image height')
         self.parser.add_argument('--batchSize', type=int, default=8)
+
         self.parser.add_argument("--apex", action="store_const", default=False, const=True)
         self.parser.add_argument("--visualize", action="store_const", default=False, const=True)
-        self.parser.add_argument("--finetune", action="store_const", default=False, const=True)
-        self.parser.add_argument("--gaussian", action="store_const", default=False, const=True)
-        self.parser.add_argument("--gaussian_bias", action="store_const", default=False, const=True)
-        self.parser.add_argument("--pg_regression", action="store_const", default=False, const=True)
-        self.parser.add_argument("--pg_lstm", action="store_const", default=False, const=True)
+
+        self.parser.add_argument("--mp_end", action="store_const", default=False, const=True)
+        self.parser.add_argument("--xdyt", action="store_const", default=False, const=True)
+        self.parser.add_argument("--slot_attn", action="store_const", default=False, const=True)
+        self.parser.add_argument("--slot_dropout", action="store_const", default=False, const=True)
+        self.parser.add_argument("--slot_gru", action="store_const", default=False, const=True)
+
+        # clip
+        self.parser.add_argument("--clip_after_encoder", action="store_const", default=False, const=True)
+        self.parser.add_argument('--clip_weight', type=float, default=None, help="the learning rate")
 
         # Augmented Paths from
         self.parser.add_argument("--aug", default=None)
@@ -33,8 +39,6 @@ class Param:
 
         # maxpooling feature
         self.parser.add_argument('--max_pool_feature', type=str, default=None, help='path of the max pooled feature')
-        self.parser.add_argument('--look_back_feature', type=str, default=None, help='path of the look-back feature')
-        self.parser.add_argument('--mix_type', type=str, default='alpha', help='max pool feature mix type, [fc, alpha]')
 
         # object match
         self.parser.add_argument("--object", action="store_const", default=False, const=True)
@@ -51,7 +55,7 @@ class Param:
         self.parser.add_argument("--lr_decay", type=float, default=0.2)
         self.parser.add_argument('--optim', type=str, default='adamW')  # rms, adam
         self.parser.add_argument('--lr', type=float, default=0.00001, help="the learning rate")
-        self.parser.add_argument('--decay', dest='weight_decay', type=float, default=0.)
+        self.parser.add_argument('--decay', dest='weight_decay', type=float, default=0.01)
         self.parser.add_argument('--gaussian_lr', type=float, default=0.00001, help="the learning rate")
         self.parser.add_argument('--pg_lr', type=float, default=0.0001, help="the learning rate")
 

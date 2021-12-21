@@ -53,8 +53,7 @@ class VLNBERT(nn.Module):
         hidden_size = self.vln_bert.config.hidden_size
         layer_norm_eps = self.vln_bert.config.layer_norm_eps
 
-        self.action_state_project = nn.Sequential(
-            nn.Linear(hidden_size+args.angle_feat_size, hidden_size), nn.Tanh())
+        self.action_state_project = nn.Sequential(nn.Linear(hidden_size+args.angle_feat_size, hidden_size), nn.Tanh())
         self.action_LayerNorm = BertLayerNorm(hidden_size, eps=layer_norm_eps)
 
         self.drop_env = nn.Dropout(p=args.featdropout)
@@ -66,17 +65,14 @@ class VLNBERT(nn.Module):
         self.state_LayerNorm = BertLayerNorm(hidden_size, eps=layer_norm_eps)
 
         # object
-        self.obj_pos_proj = nn.Linear(4, hidden_size)
-        self.cand_pos_proj = nn.Linear(4, hidden_size)
-        self.pos_encoding_ln = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
-        self.obj_dropout = nn.Dropout(p=args.featdropout)
+        if args.object:
+            self.obj_pos_proj = nn.Linear(4, hidden_size)
+            self.cand_pos_proj = nn.Linear(4, hidden_size)
+            self.pos_encoding_ln = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+            self.obj_dropout = nn.Dropout(p=args.featdropout)
 
-        extra_feat = (args.max_pool_feature is not None) + (args.look_back_feature is not None)
-
-        if extra_feat > 0:
-            self.feat_cat_fc = nn.Linear(args.feature_size * (extra_feat + 1), args.feature_size)
-            self.feat_cat_alpha = nn.Parameter(torch.ones(extra_feat))
-
+        if args.max_pool_feature is not None:
+            self.feat_cat_alpha = nn.Parameter(torch.ones(1))
 
     def forward(self, mode, sentence, token_type_ids=None,
                 attention_mask=None, lang_mask=None, vis_mask=None,
@@ -85,7 +81,10 @@ class VLNBERT(nn.Module):
 
         if mode == 'language':
             init_state, encoded_sentence, token_embeds = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
-            return init_state, encoded_sentence, token_embeds[:, 1:, :]
+            if token_embeds is not None:
+                return init_state, encoded_sentence, token_embeds[:, 1:, :]
+            else:
+                return init_state, encoded_sentence, None
 
         if mode == 'object':
             match_score = self.vln_bert(mode, sentence, lang_mask=lang_mask, obj_feat=obj_feat.long(), obj_pos_encoding=None)
@@ -102,15 +101,13 @@ class VLNBERT(nn.Module):
             return match_score
 
         elif mode == 'visual':
-
-            state_action_embed = torch.cat((sentence[:,0,:], action_feats), 1)
+            state_action_embed = torch.cat((sentence[:, 0, :], action_feats), 1)
             state_with_action = self.action_state_project(state_action_embed)
             state_with_action = self.action_LayerNorm(state_with_action)
             state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:, 1:, :]), dim=1)
 
-            # if cand_mp_feats is not None:
-            #     if args.mix_type == 'alpha':
-            #         cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha[0] * cand_mp_feats
+            if cand_mp_feats is not None:
+                cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha * cand_mp_feats
 
             cand_feats[..., :-args.angle_feat_size] = self.drop_env(cand_feats[..., :-args.angle_feat_size])
             # logit is the attention scores over the candidate features
@@ -118,7 +115,8 @@ class VLNBERT(nn.Module):
                                                                            attention_mask=attention_mask,
                                                                            lang_mask=lang_mask,
                                                                            vis_mask=vis_mask,
-                                                                           img_feats=cand_feats)
+                                                                           img_feats=cand_feats
+                                                                           )
 
             # update agent's state, unify history, language and vision by elementwise product
             vis_lang_feat = self.vis_lang_LayerNorm(attended_language * attended_visual)
@@ -129,7 +127,7 @@ class VLNBERT(nn.Module):
             return state_proj, logit, language_attn_probs
 
         else:
-            ModuleNotFoundError
+            raise ModuleNotFoundError
 
 
 class BertLayerNorm(nn.Module):
