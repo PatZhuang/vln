@@ -263,8 +263,11 @@ def train_val(test_only=False):
         # val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
         val_env_names = ['val_seen', 'val_unseen']
 
-    with open(OBJECT_INFO_STORE, 'rb') as f:
-        obj_store = pkl.load(f)
+    if args.object:
+        with open(OBJECT_INFO_STORE, 'rb') as f:
+            obj_store = pkl.load(f)
+    else:
+        obj_store = None
 
     train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok, obj_store=obj_store,
                          mp_feature_store=mp_feat_dict)
@@ -320,8 +323,11 @@ def train_val_augment(test_only=False):
         # val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
         val_env_names = ['val_seen', 'val_unseen']
 
-    with open(OBJECT_INFO_STORE, 'rb') as f:
-        obj_store = pkl.load(f)
+    if args.object:
+        with open(OBJECT_INFO_STORE, 'rb') as f:
+            obj_store = pkl.load(f)
+    else:
+        obj_store = None
 
     # Load the augmentation data
     aug_path = args.aug
