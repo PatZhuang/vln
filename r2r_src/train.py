@@ -55,7 +55,7 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
     writer = SummaryWriter(log_dir=log_dir)
     listner = Seq2SeqAgent(train_env, "", tok, args.maxAction)
 
-    record_file = open('./logs/' + args.name + '.txt', 'a')
+    record_file = open('./logs/' + args.name + '.txt', 'a+')
     record_file.write(str(args) + '\n\n')
     record_file.close()
 

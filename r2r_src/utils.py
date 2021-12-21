@@ -79,7 +79,7 @@ def load_datasets(splits):
                 with open('data/R2R_test.json') as f:
                     new_data = json.load(f)
             else:
-                with open('data/FGR2R_%s_index.json' % split) as f:
+                with open('data/R2R_%s.json' % split) as f:
                     new_data = json.load(f)
         else:
             print('\nLoading prevalent data for pretraining...')
