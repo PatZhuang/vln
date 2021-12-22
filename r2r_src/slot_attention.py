@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import init
+from param import args
 
 
 class SlotAttention(nn.Module):
@@ -50,8 +51,8 @@ class SlotAttention(nn.Module):
         pano_feat = self.norm_input(pano_feat)
 
         if dropout:
-            slots = self.dropout(slots)
-            pano_feat = self.dropout(pano_feat)
+            # slots[...,-args.angle_feat_size] = self.dropout(slots[...,-args.angle_feat_size])
+            pano_feat[...,:-args.angle_feat_size] = self.dropout(pano_feat[...,:-args.angle_feat_size])
 
         # original inputs as the initial slot
 
