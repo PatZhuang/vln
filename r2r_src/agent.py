@@ -173,12 +173,12 @@ class Seq2SeqAgent(BaseAgent):
         elif args.lr_adjust_type == 'cosine':
             self.schedulers = [
                 CosineAnnealingWarmupRestarts(opt,
-                                              first_cycle_steps=50,
+                                              first_cycle_steps=20,
                                               warmup_steps=5,
                                               max_lr=opt.param_groups[0]['lr'],
                                               min_lr=opt.param_groups[0]['lr'] * 0.005,
                                               cycle_mult=2,
-                                              gamma=1.0)
+                                              gamma=0.1)
                 for opt in self.optimizers
             ]
 

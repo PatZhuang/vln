@@ -106,7 +106,7 @@ class VLNBERT(nn.Module):
             state_with_action = self.action_LayerNorm(state_with_action)
             state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:, 1:, :]), dim=1)
 
-            if args.slot_attention:
+            if args.slot_attn:
                 cand_feats = self.drop_env(cand_feats)
             else:
                 if cand_mp_feats is not None:
