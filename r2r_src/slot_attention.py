@@ -21,19 +21,19 @@ class SlotAttention(nn.Module):
         self.to_k = nn.Linear(dim, dim)
         self.to_v = nn.Linear(dim, dim)
 
-        self.gru = nn.GRUCell(dim, dim)
+        self.gru = nn.GRUCell(dim, args.feature_size)
 
         hidden_dim = max(dim, hidden_dim)
 
         self.mlp = nn.Sequential(
-            nn.Linear(dim, hidden_dim),
+            nn.Linear(args.feature_size, hidden_dim),
             nn.ReLU(inplace=True),
-            nn.Linear(hidden_dim, dim)
+            nn.Linear(hidden_dim, args.feature_size)
         )
 
         self.norm_input = nn.LayerNorm(dim)
-        self.norm_slots = nn.LayerNorm(dim)
-        self.norm_pre_ff = nn.LayerNorm(dim)
+        self.norm_slots = nn.LayerNorm(args.feature_size)
+        self.norm_pre_ff = nn.LayerNorm(args.feature_size)
 
         self.dropout = nn.Dropout(0.6)
 
@@ -48,8 +48,8 @@ class SlotAttention(nn.Module):
         # slots = mu + sigma * torch.randn(mu.shape, device=device)
 
         slots = cand_feat
-        # pano_feat[:-args.angle_feat_size] = self.norm_input(pano_feat[:-args.angle_feat_size])
-        pano_feat = self.norm_input(pano_feat)
+        pano_feat[:-args.angle_feat_size] = self.norm_input(pano_feat[:-args.angle_feat_size].clone())
+        # pano_feat = self.norm_input(pano_feat)
 
         if dropout:
             slots[...,:-args.angle_feat_size] = self.dropout(slots[...,:-args.angle_feat_size])
@@ -63,11 +63,11 @@ class SlotAttention(nn.Module):
         for _ in range(self.iters):
             slots_prev = slots
 
-            # slots[...,:-args.angle_feat_size] = self.norm_slots(slots[...,:-args.angle_feat_size])
-            slots = self.norm_slots(slots)
+            slots[...,:-args.angle_feat_size] = self.norm_slots(slots[...,:-args.angle_feat_size])
+            # slots = self.norm_slots(slots)
 
             # (bs, num_slots, hidden_size)
-            q = self.to_q(slots)
+            q = self.to_q(slots.clone())
 
             # (bs, num_slots, num_ctx)
             dots = torch.einsum('bid,bjd->bij', q, k) * self.scale
@@ -78,12 +78,16 @@ class SlotAttention(nn.Module):
 
             # (bs, num_slots, hidden_size)
             updates = torch.einsum('bjd,bij->bid', v, attn)
-            slots = self.gru(
+            gru_updates = self.gru(
                 updates.reshape(-1, d),
-                slots_prev.reshape(-1, d)
+                slots_prev.reshape(-1, d)[...,:-args.angle_feat_size].clone()
             )
 
-            slots = slots.reshape(b, -1, d)
-            slots = slots + self.mlp(self.norm_pre_ff(slots))
+            gru_updates = gru_updates.reshape(b, -1, args.feature_size)
+            # slots = slots.reshape(b, -1, d)
+            gru_updates = gru_updates + self.mlp(self.norm_pre_ff(gru_updates))
+            slots[...,:-args.angle_feat_size] = gru_updates.clone()
+            # slots[...,:-args.angle_feat_size] = gru_updates.clone()
+            # slots[...,:-args.angle_feat_size] = slots[...,:-args.angle_feat_size] + self.mlp(self.norm_pre_ff(slots[...,:-args.angle_feat_size]))
 
         return slots
