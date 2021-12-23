@@ -55,28 +55,22 @@ class SlotAttention(nn.Module):
         #
         # slots = mu + sigma * torch.randn(mu.shape, device=device)
 
+        # original cand_feat as the initial slot
         slots = cand_feat
         pano_feat[:-args.angle_feat_size] = self.norm_input(pano_feat[:-args.angle_feat_size].clone())
-        # pano_feat = self.norm_input(pano_feat)
 
-        slots[...,:-args.angle_feat_size] = self.dropout(slots[...,:-args.angle_feat_size])
+        # slots[...,:-args.angle_feat_size] = self.dropout(slots[...,:-args.angle_feat_size])
         pano_feat[...,:-args.angle_feat_size] = self.dropout(pano_feat[...,:-args.angle_feat_size])
-
-        # original inputs as the initial slot
 
         # (bs, num_ctx, hidden_size)
         k, v = self.to_k(pano_feat), self.to_v(pano_feat)
 
         for _ in range(self.iters):
             slots_prev = slots
-            if args.slot_ignore_angle:
-                slots[...,:-args.angle_feat_size] = self.norm_slots(slots[...,:-args.angle_feat_size].clone())
-            else:
-                slots = self.norm_slots(slots)
-            # slots = self.norm_slots(slots)
+            slots[...,:-args.angle_feat_size] = self.norm_slots(slots[...,:-args.angle_feat_size].clone())
 
             # (bs, num_slots, hidden_size)
-            q = self.to_q(slots.clone())
+            q = self.to_q(slots)
 
             # (bs, num_slots, num_ctx)
             dots = torch.einsum('bid,bjd->bij', q, k) * self.scale
