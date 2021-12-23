@@ -22,8 +22,9 @@ class Param:
         self.parser.add_argument("--mp_end", action="store_const", default=False, const=True)
         self.parser.add_argument("--xdyt", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_attn", action="store_const", default=False, const=True)
-        self.parser.add_argument("--slot_dropout", action="store_const", default=False, const=True)
+        self.parser.add_argument("--slot_dropout", type=float, default=0, help='dropout rate for slot attention')
         self.parser.add_argument("--slot_gru", action="store_const", default=False, const=True)
+        self.parser.add_argument("--slot_ignore_angle", action="store_const", default=False, const=True)
 
         # clip
         self.parser.add_argument("--clip_after_encoder", action="store_const", default=False, const=True)

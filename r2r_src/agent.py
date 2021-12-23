@@ -137,7 +137,7 @@ class Seq2SeqAgent(BaseAgent):
             self.clip_criterion = nn.CrossEntropyLoss(reduction='sum')
 
         if args.slot_attn:
-            self.slot_attention = SlotAttention(num_slots=1, dim=(args.feature_size + args.angle_feat_size)).cuda()
+            self.slot_attention = SlotAttention(num_slots=1, dim=(args.feature_size + args.angle_feat_size), drop_rate=args.slot_dropout).cuda()
             self.slot_optimizer = args.optimizer(self.slot_attention.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             self.models.append(self.slot_attention)
             self.optimizers.append(self.slot_optimizer)
@@ -173,7 +173,7 @@ class Seq2SeqAgent(BaseAgent):
         elif args.lr_adjust_type == 'cosine':
             self.schedulers = [
                 CosineAnnealingWarmupRestarts(opt,
-                                              first_cycle_steps=20,
+                                              first_cycle_steps=50,
                                               warmup_steps=5,
                                               max_lr=opt.param_groups[0]['lr'],
                                               min_lr=opt.param_groups[0]['lr'] * 0.005,
@@ -558,17 +558,7 @@ class Seq2SeqAgent(BaseAgent):
                 lang_feat = language_features
 
             if args.slot_attn:
-                candidate_feat = self.slot_attention(
-                    candidate_feat, pano_feat, candidate_mask,
-                    dropout=args.slot_dropout,
-                )
-                # candidate_feat[..., :-args.angle_feat_size] = self.slot_attention(
-                #     candidate_feat[..., :-args.angle_feat_size].clone(),
-                #     pano_feat[..., :-args.angle_feat_size],
-                #     candidate_mask,
-                #     dropout=args.slot_dropout,
-                #     use_gru=args.slot_gru
-                # )
+                candidate_feat = self.slot_attention(candidate_feat, pano_feat, candidate_mask)
 
             ''' Visual BERT '''
             visual_inputs = {'mode': 'visual',
@@ -837,17 +827,7 @@ class Seq2SeqAgent(BaseAgent):
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
 
             if args.slot_attn:
-                candidate_feat = self.slot_attention(
-                    candidate_feat, pano_feat, candidate_mask,
-                    dropout=args.slot_dropout,
-                )
-                # candidate_feat[..., :-args.angle_feat_size] = self.slot_attention(
-                #     candidate_feat[..., :-args.angle_feat_size].clone(),
-                #     pano_feat[..., :-args.angle_feat_size],
-                #     candidate_mask,
-                #     dropout=args.slot_dropout,
-                #     use_gru=args.slot_gru
-                # )
+                candidate_feat = self.slot_attention(candidate_feat, pano_feat, candidate_mask)
 
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''
