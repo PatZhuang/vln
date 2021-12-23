@@ -48,10 +48,11 @@ class SlotAttention(nn.Module):
         # slots = mu + sigma * torch.randn(mu.shape, device=device)
 
         slots = cand_feat
+        # pano_feat[:-args.angle_feat_size] = self.norm_input(pano_feat[:-args.angle_feat_size])
         pano_feat = self.norm_input(pano_feat)
 
         if dropout:
-            # slots[...,-args.angle_feat_size] = self.dropout(slots[...,-args.angle_feat_size])
+            slots[...,:-args.angle_feat_size] = self.dropout(slots[...,:-args.angle_feat_size])
             pano_feat[...,:-args.angle_feat_size] = self.dropout(pano_feat[...,:-args.angle_feat_size])
 
         # original inputs as the initial slot
@@ -62,6 +63,7 @@ class SlotAttention(nn.Module):
         for _ in range(self.iters):
             slots_prev = slots
 
+            # slots[...,:-args.angle_feat_size] = self.norm_slots(slots[...,:-args.angle_feat_size])
             slots = self.norm_slots(slots)
 
             # (bs, num_slots, hidden_size)
