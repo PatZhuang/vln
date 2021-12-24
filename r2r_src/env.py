@@ -50,7 +50,7 @@ class EnvBatch():
             self.image_w = args.image_w
             self.image_h = args.image_h
             self.vfov = 60
-        # self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
+        self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
         self.batch_size = batch_size
 
         self.sims = MatterSim.Simulator()

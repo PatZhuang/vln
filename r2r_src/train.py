@@ -104,12 +104,8 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         critic_loss = sum(listner.logs['critic_loss']) / total
         RL_loss = sum(listner.logs['RL_loss']) / max(len(listner.logs['RL_loss']), 1)
         IL_loss = sum(listner.logs['IL_loss']) / max(len(listner.logs['IL_loss']), 1)
-        # PG_loss = sum(listner.logs['PG_loss']) / max(len(listner.logs['PG_loss']), 1)
-        # Attn_loss = sum(listner.logs['Attn_loss']) / max(len(listner.logs['Attn_loss']), 1)
-        # Shift_loss = sum(listner.logs['Shift_loss']) / max(len(listner.logs['Shift_loss']), 1)
-        # Path_pg_loss = sum(listner.logs['Path_pg_loss']) / max(len(listner.logs['Path_pg_loss']), 1)
-        # Instr_pg_loss = sum(listner.logs['Instr_pg_loss']) / max(len(listner.logs['Instr_pg_loss']), 1)
-        # Clip_loss = sum(listner.logs['Clip_loss']) / max(len(listner.logs['Clip_loss']), 1)
+        D_loss = sum(listner.logs['D_loss']) /  max(len(listner.logs['D_loss']), 1)
+
         entropy = sum(listner.logs['entropy']) / total
         lr = listner.logs['loss/lr'][-1]
         writer.add_scalar('loss/lr', lr, idx)
@@ -117,12 +113,8 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         writer.add_scalar("policy_entropy", entropy, idx)
         writer.add_scalar("loss/RL_loss", RL_loss, idx)
         writer.add_scalar("loss/IL_loss", IL_loss, idx)
-        # writer.add_scalar("loss/PG_loss", PG_loss, idx)
-        # writer.add_scalar("loss/Attn_loss", Attn_loss, idx)
-        # writer.add_scalar("loss/Shift_loss", Shift_loss, idx)
-        # writer.add_scalar("loss/Instr_pg_loss", Instr_pg_loss, idx)
-        # writer.add_scalar("loss/Path_pg_loss", Path_pg_loss, idx)
-        # writer.add_scalar("loss/Clip_loss", Clip_loss, idx)
+        writer.add_scalar("loss/D_loss", D_loss, idx)
+
         writer.add_scalar("total_actions", total, idx)
         writer.add_scalar("max_length", length, idx)
 
