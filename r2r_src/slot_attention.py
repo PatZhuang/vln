@@ -45,7 +45,7 @@ class SlotAttention(nn.Module):
         self.norm_pre_ff = nn.LayerNorm(dim)
         self.norm_input = nn.LayerNorm(dim)
         self.slot_dropout = nn.Dropout(drop_rate)
-        self.input_dropout = nn.Dropout(drop_rate * 1.5)
+        self.input_dropout = nn.Dropout(drop_rate)
 
     def forward(self, cand_feat, pano_feat, cand_mask):
         b, n, d, device = *pano_feat.shape, pano_feat.device
