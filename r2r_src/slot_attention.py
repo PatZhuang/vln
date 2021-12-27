@@ -92,4 +92,4 @@ class SlotAttention(nn.Module):
             # slots[...,:-args.angle_feat_size] = gru_updates.clone()
             slots = gru_updates
 
-        return slots
+        return slots, attn

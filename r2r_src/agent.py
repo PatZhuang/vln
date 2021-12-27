@@ -475,7 +475,9 @@ class Seq2SeqAgent(BaseAgent):
                 self.visualization_log[ob['instr_id']] = {
                     'language_attn_prob': [],
                     'progress_gt': [],
-                    'seq_length': seq_lengths[i].detach().item()
+                    'seq_length': seq_lengths[i].detach().item(),
+                    'slot_attn_weight': [],
+                    'candidate_view_id': []
                 }
 
         for t in range(self.episode_len):
@@ -506,7 +508,7 @@ class Seq2SeqAgent(BaseAgent):
                 mp_feat = None
 
             if args.slot_attn:
-                candidate_feat = self.slot_attention(candidate_feat, pano_feat, candidate_mask)
+                candidate_feat, slot_attn_weight = self.slot_attention(candidate_feat, pano_feat, candidate_mask)
             if args.discriminator and (train_ml or train_rl):
                 scan_class_probs = self.discriminator(candidate_feat.clone().detach()[...,:-args.angle_feat_size])
                 scan_class_target = torch.tensor(
@@ -536,6 +538,9 @@ class Seq2SeqAgent(BaseAgent):
             if args.visualize and self.env.name not in ['train', 'aug']:
                 for i, ob in enumerate(perm_obs):
                     self.visualization_log[ob['instr_id']]['language_attn_prob'].append(language_attn_probs[i, :].detach().cpu().numpy())
+                    if args.slot_attn:
+                        self.visualization_log[ob['instr_id']]['slot_attn_weight'].append(slot_attn_weight[i, :].detach().cpu().numpy())
+                        self.visualization_log[ob['instr_id']]['candidate_view_id'].append([cand['pointId'] for cand in ob['candidate']])
 
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
@@ -645,7 +650,7 @@ class Seq2SeqAgent(BaseAgent):
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
 
             if args.slot_attn:
-                candidate_feat = self.slot_attention(candidate_feat, pano_feat, candidate_mask)
+                candidate_feat, _ = self.slot_attention(candidate_feat, pano_feat, candidate_mask)
 
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''
