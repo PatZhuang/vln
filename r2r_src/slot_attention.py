@@ -61,7 +61,6 @@ class SlotAttention(nn.Module):
         pano_feat = self.norm_input(pano_feat)
         pano_feat[...,:-args.angle_feat_size] = self.input_dropout(pano_feat[...,:-args.angle_feat_size])
 
-
         # (bs, num_ctx, hidden_size)
         k, v = self.to_k(pano_feat), self.to_v(pano_feat)
 

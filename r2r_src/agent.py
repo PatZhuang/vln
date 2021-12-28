@@ -427,8 +427,7 @@ class Seq2SeqAgent(BaseAgent):
         batch_size = len(obs)
 
         # Language input
-        sentence, language_attention_mask, token_type_ids, \
-        seq_lengths, perm_idx = self._sort_batch(obs)
+        sentence, language_attention_mask, token_type_ids, seq_lengths, perm_idx = self._sort_batch(obs)
         perm_obs = obs[perm_idx]
 
         ''' Language BERT '''
@@ -512,6 +511,19 @@ class Seq2SeqAgent(BaseAgent):
                     slot_candidate_mask = torch.cat([utils.length2mask(np.array(candidate_leng) - 1), torch.ones(batch_size, 1).bool().cuda()], 1)
                 else:
                     slot_candidate_mask = candidate_mask
+                if args.slot_noise:
+                    cand_shape = candidate_feat[..., :-args.angle_feat_size].shape
+                    cand_noise = torch.cuda.FloatTensor(cand_shape)
+                    torch.randn(cand_shape, out=cand_noise)
+                    cand_noise = cand_noise / 10  # Normal(0, 0.01)
+                    candidate_feat[..., : -args.angle_feat_size] = (candidate_feat[..., : -args.angle_feat_size] + cand_noise).clamp(min=0, max=1)
+
+                    pano_shape = pano_feat[..., :-args.angle_feat_size].shape
+                    pano_noise = torch.cuda.FloatTensor(pano_shape)
+                    torch.randn(pano_shape, out=pano_noise)
+                    pano_noise = pano_noise / 10
+                    pano_feat[..., : -args.angle_feat_size] = (pano_feat[..., : -args.angle_feat_size] + pano_noise).clamp(min=0, max=1)
+
                 candidate_feat, slot_attn_weight = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
             if args.discriminator and (train_ml or train_rl):
                 scan_class_probs = self.discriminator(candidate_feat.clone().detach()[...,:-args.angle_feat_size])
@@ -654,7 +666,27 @@ class Seq2SeqAgent(BaseAgent):
             visual_attention_mask = torch.cat((language_attention_mask, visual_temp_mask), dim=-1)
 
             if args.slot_attn:
-                candidate_feat, _ = self.slot_attention(candidate_feat, pano_feat, candidate_mask)
+                if args.slot_ignore_end:
+                    slot_candidate_mask = torch.cat(
+                        [utils.length2mask(np.array(candidate_leng) - 1), torch.ones(batch_size, 1).bool().cuda()], 1)
+                else:
+                    slot_candidate_mask = candidate_mask
+                if args.slot_noise:
+                    cand_shape = candidate_feat[..., :-args.angle_feat_size].shape
+                    cand_noise = torch.cuda.FloatTensor(cand_shape)
+                    torch.randn(cand_shape, out=cand_noise)
+                    cand_noise = cand_noise / 10  # Normal(0, 0.01)
+                    candidate_feat[..., : -args.angle_feat_size] = (
+                                candidate_feat[..., : -args.angle_feat_size] + cand_noise).clamp(min=0, max=1)
+
+                    pano_shape = pano_feat[..., :-args.angle_feat_size].shape
+                    pano_noise = torch.cuda.FloatTensor(pano_shape)
+                    torch.randn(pano_shape, out=pano_noise)
+                    pano_noise = pano_noise / 10
+                    pano_feat[..., : -args.angle_feat_size] = (
+                                pano_feat[..., : -args.angle_feat_size] + pano_noise).clamp(min=0, max=1)
+
+                candidate_feat, _ = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
 
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''

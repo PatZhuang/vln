@@ -108,7 +108,8 @@ class VLNBERT(nn.Module):
 
             # if cand_mp_feats is not None:
             #     cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha * cand_mp_feats
-            # cand_feats[..., :-args.angle_feat_size] = self.drop_env(cand_feats[..., :-args.angle_feat_size])
+            if not args.slot_attn:
+                cand_feats[..., :-args.angle_feat_size] = self.drop_env(cand_feats[..., :-args.angle_feat_size])
             # logit is the attention scores over the candidate features
             h_t, logit, attended_language, attended_visual, language_attn_probs = self.vln_bert(mode, state_feats,
                                                                            attention_mask=attention_mask,
