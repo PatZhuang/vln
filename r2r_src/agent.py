@@ -138,7 +138,11 @@ class Seq2SeqAgent(BaseAgent):
             self.clip_criterion = nn.CrossEntropyLoss(reduction='sum')
 
         if args.slot_attn:
-            self.slot_attention = SlotAttention(num_slots=1, dim=(args.feature_size + args.angle_feat_size), drop_rate=args.slot_dropout).cuda()
+            self.slot_attention = SlotAttention(
+                num_slots=1,
+                dim=(args.feature_size + args.angle_feat_size),
+                drop_rate=args.slot_dropout,
+            ).cuda()
             self.slot_optimizer = args.optimizer(self.slot_attention.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             self.models.append(self.slot_attention)
             self.optimizers.append(self.slot_optimizer)
