@@ -527,6 +527,33 @@ def length2mask(length, size=None):
     mask = (torch.arange(size, dtype=torch.int64).unsqueeze(0).repeat(batch_size, 1) > (torch.LongTensor(length) - 1).unsqueeze(1)).cuda()
     return mask
 
+
+def localmask(pointIds, query_len, ctx_len=None):
+    batch_size = len(pointIds)
+    if ctx_len is None:
+        ctx_len = query_len
+
+    pattern = lambda x: [
+        list(
+            filter(
+                lambda y: (x // 12 - 1 <= y // 12 <= x // 12 + 1),
+                [
+                    (x % 12 - 1) % 12, (x % 12), (x % 12 + 1 )% 12,
+                    (x % 12 - 1) % 12 + 12, (x % 12) + 12, (x % 12 + 1) % 12 + 12,
+                    (x % 12 - 1) % 12 + 24, (x % 12) + 24, (x % 12 + 1) % 12 + 24
+                ]
+            )
+        )
+    ]
+
+    mask = torch.zeros((batch_size, query_len, ctx_len)).cuda().bool()
+    for i in range(batch_size):
+        for j in range(len(pointIds[i])):
+            mask[i][j][pattern(pointIds[i][j])] = True
+
+    return mask
+
+
 def average_length(path2inst):
     length = []
 

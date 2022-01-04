@@ -515,7 +515,7 @@ class Seq2SeqAgent(BaseAgent):
                     slot_candidate_mask = torch.cat([utils.length2mask(np.array(candidate_leng) - 1), torch.ones(batch_size, 1).bool().cuda()], 1)
                 else:
                     slot_candidate_mask = candidate_mask
-                if args.slot_noise:
+                if args.slot_noise and (train_ml or train_rl):
                     cand_shape = candidate_feat[..., :-args.angle_feat_size].shape
                     cand_noise = torch.cuda.FloatTensor(cand_shape)
                     torch.randn(cand_shape, out=cand_noise)
@@ -527,6 +527,16 @@ class Seq2SeqAgent(BaseAgent):
                     torch.randn(pano_shape, out=pano_noise)
                     pano_noise = pano_noise / 10
                     pano_feat[..., : -args.angle_feat_size] = (pano_feat[..., : -args.angle_feat_size] + pano_noise).clamp(min=0, max=1)
+
+                if args.slot_local_mask:
+                    pointIds = [
+                        [cand['pointId'] for cand in ob['candidate']] for ob in perm_obs
+                    ]
+                    local_mask = utils.localmask(pointIds, max(candidate_leng), 36)
+                    slot_candidate_mask = slot_candidate_mask.unsqueeze(-1).repeat(1, 1, 36)
+                    slot_candidate_mask = slot_candidate_mask | local_mask
+                else:
+                    slot_candidate_mask = slot_candidate_mask.unsqueeze(-1)
 
                 slot_result, slot_attn_weight = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
                 if args.slot_residual:
@@ -694,6 +704,16 @@ class Seq2SeqAgent(BaseAgent):
                     pano_feat[..., : -args.angle_feat_size] = (
                                 pano_feat[..., : -args.angle_feat_size] + pano_noise).clamp(min=0, max=1)
 
+                if args.slot_local_mask:
+                    pointIds = [
+                        [cand['pointId'] for cand in ob['candidate']] for ob in perm_obs
+                    ]
+                    local_mask = utils.localmask(pointIds, max(candidate_leng), 36)
+                    slot_candidate_mask = slot_candidate_mask.unsqueeze(-1).repeat(1, 1, 36)
+                    slot_candidate_mask = slot_candidate_mask | local_mask
+                else:
+                    slot_candidate_mask = slot_candidate_mask.unsqueeze(-1)
+
                 slot_result, slot_attn_weight = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
                 if args.slot_residual:
                     candidate_feat[..., : -args.angle_feat_size] = candidate_feat[...,
@@ -779,8 +799,10 @@ class Seq2SeqAgent(BaseAgent):
             self.vln_bert.train()
             self.critic.train()
         else:
-            self.vln_bert.eval()
-            self.critic.eval()
+            for model in self.models:
+                model.eval()
+            # self.vln_bert.eval()
+            # self.critic.eval()
         super(Seq2SeqAgent, self).test(iters)
 
     def zero_grad(self):
