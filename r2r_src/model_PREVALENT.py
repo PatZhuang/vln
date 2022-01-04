@@ -64,13 +64,6 @@ class VLNBERT(nn.Module):
         self.state_proj = nn.Linear(hidden_size*2, hidden_size, bias=True)
         self.state_LayerNorm = BertLayerNorm(hidden_size, eps=layer_norm_eps)
 
-        # object
-        if args.object:
-            self.obj_pos_proj = nn.Linear(4, hidden_size)
-            self.cand_pos_proj = nn.Linear(4, hidden_size)
-            self.pos_encoding_ln = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
-            self.obj_dropout = nn.Dropout(p=args.featdropout)
-
         if args.max_pool_feature is not None:
             self.feat_cat_alpha = nn.Parameter(torch.ones(1))
 
@@ -85,20 +78,6 @@ class VLNBERT(nn.Module):
                 return init_state, encoded_sentence, token_embeds[:, 1:, :]
             else:
                 return init_state, encoded_sentence, None
-
-        if mode == 'object':
-            match_score = self.vln_bert(mode, sentence, lang_mask=lang_mask, obj_feat=obj_feat.long(), obj_pos_encoding=None)
-
-            if args.match_type == 'max':
-                match_score = match_score.max(-1).values
-                match_score.masked_fill_(cand_mask, -float('inf'))
-            elif args.match_type == 'mean':
-                match_score = match_score.mean(-1)
-                match_score.masked_fill_(cand_mask, -float('inf'))
-
-            # match_score = nn.functional.softmax(match_score)
-            # assert not torch.isnan(match_score).any()
-            return match_score
 
         elif mode == 'visual':
             state_action_embed = torch.cat((sentence[:, 0, :], action_feats), 1)

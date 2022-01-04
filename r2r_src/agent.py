@@ -183,7 +183,7 @@ class Seq2SeqAgent(BaseAgent):
                 for opt in self.optimizers
             ]
         else:
-            raise ValueError('no valid lr scheduler')
+            self.schedulers = []
 
         if args.apex:
             self.models, self.optimizers = amp.initialize(self.models, self.optimizers, opt_level='O1')
@@ -528,7 +528,11 @@ class Seq2SeqAgent(BaseAgent):
                     pano_noise = pano_noise / 10
                     pano_feat[..., : -args.angle_feat_size] = (pano_feat[..., : -args.angle_feat_size] + pano_noise).clamp(min=0, max=1)
 
-                candidate_feat, slot_attn_weight = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
+                slot_result, slot_attn_weight = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
+                if args.slot_residual:
+                    candidate_feat[..., : -args.angle_feat_size] = candidate_feat[..., : -args.angle_feat_size] + slot_result[..., : -args.angle_feat_size]
+                else:
+                    candidate_feat = slot_result
             if args.discriminator and (train_ml or train_rl):
                 scan_class_probs = self.discriminator(candidate_feat.clone().detach()[...,:-args.angle_feat_size])
                 scan_class_target = torch.tensor(
@@ -690,7 +694,13 @@ class Seq2SeqAgent(BaseAgent):
                     pano_feat[..., : -args.angle_feat_size] = (
                                 pano_feat[..., : -args.angle_feat_size] + pano_noise).clamp(min=0, max=1)
 
-                candidate_feat, _ = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
+                slot_result, slot_attn_weight = self.slot_attention(candidate_feat, pano_feat, slot_candidate_mask)
+                if args.slot_residual:
+                    candidate_feat[..., : -args.angle_feat_size] = candidate_feat[...,
+                                                                   : -args.angle_feat_size] + slot_result[...,
+                                                                                              : -args.angle_feat_size]
+                else:
+                    candidate_feat = slot_result
 
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''

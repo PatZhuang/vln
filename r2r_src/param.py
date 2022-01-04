@@ -26,6 +26,7 @@ class Param:
         self.parser.add_argument("--slot_ignore_end", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_share_qk", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_noise", action="store_const", default=False, const=True)
+        self.parser.add_argument("--slot_residual", action="store_const", default=False, const=True)
         self.parser.add_argument("--discriminator", action="store_const", default=False, const=True)
 
 
