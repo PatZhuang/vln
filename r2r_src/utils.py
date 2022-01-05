@@ -528,28 +528,35 @@ def length2mask(length, size=None):
     return mask
 
 
-def localmask(pointIds, query_len, ctx_len=None):
-    batch_size = len(pointIds)
-    if ctx_len is None:
-        ctx_len = query_len
-
-    pattern = lambda x: [
+def point_mask(point_id):
+    return [
         list(
             filter(
-                lambda y: (x // 12 - 1 <= y // 12 <= x // 12 + 1),
+                lambda pos: (point_id // 12 - 1 <= pos // 12 <= point_id // 12 + 1),
                 [
-                    (x % 12 - 1) % 12, (x % 12), (x % 12 + 1 )% 12,
-                    (x % 12 - 1) % 12 + 12, (x % 12) + 12, (x % 12 + 1) % 12 + 12,
-                    (x % 12 - 1) % 12 + 24, (x % 12) + 24, (x % 12 + 1) % 12 + 24
+                    (point_id % 12 - 1) % 12, (point_id % 12), (point_id % 12 + 1 )% 12,
+                    (point_id % 12 - 1) % 12 + 12, (point_id % 12) + 12, (point_id % 12 + 1) % 12 + 12,
+                    (point_id % 12 - 1) % 12 + 24, (point_id % 12) + 24, (point_id % 12 + 1) % 12 + 24
                 ]
             )
         )
     ]
 
-    mask = torch.zeros((batch_size, query_len, ctx_len)).cuda().bool()
+
+POINT_MASKS = [point_mask(pid) for pid in range(36)]
+
+
+def localmask(pointIds, query_len, ctx_len=None):
+    batch_size = len(pointIds)
+    if ctx_len is None:
+        ctx_len = query_len
+
+    mask = torch.cat([
+        torch.cat([torch.ones((1, len(pid))), torch.zeros((1, query_len - len(pid)))], 1) for pid in pointIds
+    ], 0).unsqueeze(-1).repeat(1, 1, ctx_len).bool().cuda()
     for i in range(batch_size):
         for j in range(len(pointIds[i])):
-            mask[i][j][pattern(pointIds[i][j])] = True
+            mask[i][j][POINT_MASKS[pointIds[i][j]]] = False
 
     return mask
 
