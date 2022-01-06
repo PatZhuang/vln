@@ -30,6 +30,8 @@ from clip import Clip
 from slot_attention import SlotAttention
 from adversarial import Discriminator
 
+import trar
+
 
 class BaseAgent(object):
     ''' Base class for an R2R agent to generate and save trajectories. '''
@@ -551,6 +553,19 @@ class Seq2SeqAgent(BaseAgent):
                 d_loss_tmp = self.discriminator_criterion(scan_class_probs, scan_class_target)
                 discriminator_loss += torch.sum(d_loss_tmp[candidate_mask.reshape(d_loss_tmp.shape[0])])
 
+            if args.trar_mask:
+                pointIds = [
+                    [cand['pointId'] for cand in ob['candidate']] for ob in perm_obs
+                ]
+                trar_mask = (1 - trar.cand_mask(pointIds)).cuda()
+
+                grid_mask = torch.zeros((batch_size, max(candidate_leng), max(candidate_leng))).cuda()
+                for i in range(batch_size):
+                    grid_mask[i, :candidate_leng[i], :candidate_leng[i]] = 1
+            else:
+                trar_mask = None
+                grid_mask = None
+
             ''' Visual BERT '''
             visual_inputs = {'mode': 'visual',
                              'sentence': language_features,
@@ -561,7 +576,8 @@ class Seq2SeqAgent(BaseAgent):
                              'action_feats': input_a_t,
                              'cand_feats': candidate_feat,
                              'cand_mp_feats': candidate_mp_feat,
-                             'mp_feats': mp_feat
+                             'mp_feats': mp_feat,
+                             'trar_masks': (trar_mask, grid_mask)
                              }
 
             h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
@@ -722,6 +738,19 @@ class Seq2SeqAgent(BaseAgent):
                 else:
                     candidate_feat = slot_result
 
+            if args.trar_mask:
+                pointIds = [
+                    [cand['pointId'] for cand in ob['candidate']] for ob in perm_obs
+                ]
+                trar_mask = (1 - trar.cand_mask(pointIds)).cuda()
+
+                grid_mask = torch.zeros((batch_size, max(candidate_leng), max(candidate_leng))).cuda()
+                for i in range(batch_size):
+                    grid_mask[i, :candidate_leng[i], :candidate_leng[i]] = 1
+            else:
+                trar_mask = None
+                grid_mask = None
+
             self.vln_bert.vln_bert.config.directions = max(candidate_leng)
             ''' Visual BERT '''
             visual_inputs = {'mode': 'visual',
@@ -734,6 +763,7 @@ class Seq2SeqAgent(BaseAgent):
                              # 'pano_feats':         f_t,
                              'cand_feats': candidate_feat,
                              'cand_mp_feats': candidate_mp_feat,
+                             'trar_masks': (trar_mask, grid_mask)
                              }
             last_h_, _, _ = self.vln_bert(**visual_inputs)
 

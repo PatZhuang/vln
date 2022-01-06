@@ -30,6 +30,9 @@ class Param:
         self.parser.add_argument("--slot_local_mask", action="store_const", default=False, const=True)
         self.parser.add_argument("--discriminator", action="store_const", default=False, const=True)
 
+        self.parser.add_argument("--trar_mask", action="store_const", default=False, const=True)
+        self.parser.add_argument('--trar_pooling', type=str, default='attention')
+
 
         # clip
         self.parser.add_argument("--clip_after_encoder", action="store_const", default=False, const=True)

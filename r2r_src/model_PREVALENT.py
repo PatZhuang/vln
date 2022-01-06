@@ -70,7 +70,8 @@ class VLNBERT(nn.Module):
     def forward(self, mode, sentence, token_type_ids=None,
                 attention_mask=None, lang_mask=None, vis_mask=None,
                 position_ids=None, action_feats=None, pano_feats=None, cand_feats=None, mp_feats=None,
-                cand_pos=None, cand_mask=None, obj_feat=None, obj_bbox=None, cand_mp_feats=None, cand_lb_feats=None):
+                cand_pos=None, cand_mask=None, obj_feat=None, obj_bbox=None, cand_mp_feats=None, cand_lb_feats=None,
+                trar_masks=None):
 
         if mode == 'language':
             init_state, encoded_sentence, token_embeds = self.vln_bert(mode, sentence, attention_mask=attention_mask, lang_mask=lang_mask,)
@@ -93,7 +94,8 @@ class VLNBERT(nn.Module):
                                                                            attention_mask=attention_mask,
                                                                            lang_mask=lang_mask,
                                                                            vis_mask=vis_mask,
-                                                                           img_feats=cand_feats
+                                                                           img_feats=cand_feats,
+                                                                           trar_masks=trar_masks
                                                                            )
 
             # update agent's state, unify history, language and vision by elementwise product
