@@ -73,7 +73,11 @@ class SlotAttention(nn.Module):
             # (bs, num_slots, num_ctx)
             dots = torch.einsum('bid,bjd->bij', q, k) * self.scale
             dots.masked_fill_(cand_mask, -float('inf'))
-            attn = dots.softmax(dim=1)
+            if args.slot_mean:
+                attn = dots.softmax(dim=1) + self.eps
+                attn = attn / attn.sum(dim=-1, keepdim=True)
+            else:
+                attn = dots.softmax(dim=1)
 
             attn_weights.append(attn)   # for visualization
 

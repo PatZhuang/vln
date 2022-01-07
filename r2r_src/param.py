@@ -28,6 +28,7 @@ class Param:
         self.parser.add_argument("--slot_noise", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_residual", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_local_mask", action="store_const", default=False, const=True)
+        self.parser.add_argument("--slot_mean", action="store_const", default=False, const=True)
         self.parser.add_argument("--discriminator", action="store_const", default=False, const=True)
 
         self.parser.add_argument("--trar_mask", action="store_const", default=False, const=True)
