@@ -534,7 +534,7 @@ class Seq2SeqAgent(BaseAgent):
                     pointIds = [
                         [cand['pointId'] for cand in ob['candidate']] for ob in perm_obs
                     ]
-                    local_mask = utils.localmask(pointIds, max(candidate_leng), 36)
+                    local_mask = utils.localmask(pointIds, max(candidate_leng), 36, args.slot_local_mask_h, args.slot_local_mask_v)
                     slot_candidate_mask = slot_candidate_mask.unsqueeze(-1).repeat(1, 1, 36)
                     slot_candidate_mask = slot_candidate_mask | local_mask
                 else:
@@ -910,12 +910,14 @@ class Seq2SeqAgent(BaseAgent):
                 print_progress(iter, n_iters + 1, prefix='Progress:', suffix='Complete', bar_length=50)
 
     def adjust_lr(self):
+        lr = args.lr
         for sch in self.schedulers:
             sch.step()
             if args.lr_adjust_type == 'cosine':
                 lr = sch.optimizer.param_groups[0]['lr']
             else:
                 lr = sch.get_last_lr()[-1]
+
         self.logs['loss/lr'].append(lr)
 
     def save(self, epoch, path):

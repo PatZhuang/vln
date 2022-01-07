@@ -29,6 +29,8 @@ class Param:
         self.parser.add_argument("--slot_residual", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_local_mask", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_mean", action="store_const", default=False, const=True)
+        self.parser.add_argument('--slot_local_mask_h', type=int, default=3, help='local mask horizontal span')
+        self.parser.add_argument('--slot_local_mask_v', type=int, default=3, help='local mask vertical span')
         self.parser.add_argument("--discriminator", action="store_const", default=False, const=True)
 
         self.parser.add_argument("--trar_mask", action="store_const", default=False, const=True)

@@ -528,25 +528,23 @@ def length2mask(length, size=None):
     return mask
 
 
-def point_mask(point_id):
-    return [
-        list(
-            filter(
-                lambda pos: (point_id // 12 - 1 <= pos // 12 <= point_id // 12 + 1),
-                [
-                    (point_id % 12 - 1) % 12, (point_id % 12), (point_id % 12 + 1 )% 12,
-                    (point_id % 12 - 1) % 12 + 12, (point_id % 12) + 12, (point_id % 12 + 1) % 12 + 12,
-                    (point_id % 12 - 1) % 12 + 24, (point_id % 12) + 24, (point_id % 12 + 1) % 12 + 24
-                ]
-            )
+def point_mask(x, h_span=3, v_span=3):
+    # h: horizontal span: 1~12
+    # v: vertical span 1~4
+    h = h_span // 2
+    v = v_span // 2
+    return list(
+        filter(
+            lambda y: (x // 12 - h <= y // 12 <= x // 12 + h) and (0 <= y <= 35),
+            np.ravel([[np.array([(x % 12 + i) % 12 for i in range(0 - h, 0 + h + 1)]) + 12 * j] for j in range(x // 12 - v, x // 12 + v + 1)])
         )
-    ]
+    )
 
 
-POINT_MASKS = [point_mask(pid) for pid in range(36)]
+POINT_MASKS = [point_mask(pid, h_span=args.slot_local_mask_h, v_span=args.slot_local_mask_v) for pid in range(36)]
 
 
-def localmask(pointIds, query_len, ctx_len=None):
+def localmask(pointIds, query_len, ctx_len=None, h_span=3, v_span=3):
     batch_size = len(pointIds)
     if ctx_len is None:
         ctx_len = query_len
