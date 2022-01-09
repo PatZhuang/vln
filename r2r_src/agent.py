@@ -959,6 +959,9 @@ class Seq2SeqAgent(BaseAgent):
             model.load_state_dict(state, strict=False)
             if args.loadOptim:
                 optimizer.load_state_dict(states[name]['optimizer'])
+                if args.reset_lr:
+                    for g in optimizer.param_groups:
+                        g['lr'] = args.lr
 
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer),
                      ("critic", self.critic, self.critic_optimizer)]
