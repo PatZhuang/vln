@@ -535,7 +535,7 @@ def point_mask(x, h_span=3, v_span=3):
     v = v_span // 2
     return list(
         filter(
-            lambda y: (x // 12 - h <= y // 12 <= x // 12 + h) and (0 <= y <= 35),
+            lambda y: (x // 12 - v <= y // 12 <= x // 12 + v) and (0 <= y <= 35),
             np.ravel([[np.array([(x % 12 + i) % 12 for i in range(0 - h, 0 + h + 1)]) + 12 * j] for j in range(x // 12 - v, x // 12 + v + 1)])
         )
     )
