@@ -19,7 +19,7 @@ import pdb
 
 sys.path.append('..')
 from param import args
-import trar
+# import trar
 
 
 logger = logging.getLogger(__name__)
@@ -116,10 +116,10 @@ class BertSelfAttention(nn.Module):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-        if args.trar_mask and attention_mask.shape[-1] == attention_mask.shape[-2]: # visual mask
-            attention_scores = attention_scores * attention_mask
-        else:
-            attention_scores = attention_scores + attention_mask
+        # if args.trar_mask and attention_mask.shape[-1] == attention_mask.shape[-2]: # visual mask
+        #     attention_scores = attention_scores * attention_mask
+        # else:
+        attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -343,10 +343,10 @@ class LXRTXLayer(nn.Module):
 
         ''' visual self-attention with state '''
         visn_att_output = torch.cat((lang_feats[:, 0:1, :], visn_feats), dim=1)
-        if args.trar_mask:
-            state_vis_mask = torch.nn.ConstantPad2d((1,0,1,0), 1)(visn_attention_mask)
-        else:
-            state_vis_mask = torch.cat((lang_attention_mask[:,:,:,0:1], visn_attention_mask), dim=-1)
+        # if args.trar_mask:
+        #     state_vis_mask = torch.nn.ConstantPad2d((1,0,1,0), 1)(visn_attention_mask)
+        # else:
+        state_vis_mask = torch.cat((lang_attention_mask[:,:,:,0:1], visn_attention_mask), dim=-1)
 
         ''' state and vision attend to language '''
         visn_att_output, cross_attention_scores = self.cross_att(lang_feats[:, 1:, :], lang_attention_mask[:, :, :, 1:], visn_att_output, state_vis_mask)
@@ -404,13 +404,15 @@ class VLNBert(BertPreTrainedModel):
         self.addlayer = nn.ModuleList(
             [LXRTXLayer(config) for _ in range(self.vl_layers)])
         self.vision_encoder = VisionEncoder(self.config.img_feature_dim, self.config)
-        if args.trar_mask:
-            self.routing_block = trar.SoftRoutingBlock(in_channel=self.config.hidden_size, out_channel=7, pooling=args.trar_pooling, reduction=2)
+        # if args.trar_mask:
+        #     self.routing_block = trar.SoftRoutingBlock(in_channel=self.config.hidden_size, out_channel=7, pooling=args.trar_pooling, reduction=2)
         self.init_weights()
 
     def forward(self, mode, input_ids, token_type_ids=None,
         attention_mask=None, lang_mask=None, vis_mask=None, position_ids=None, head_mask=None, img_feats=None,
-                cand_mask=None, obj_feat=None, obj_pos_encoding=None, trar_masks=None):
+                cand_mask=None, obj_feat=None, obj_pos_encoding=None
+                # , trar_masks=None
+                ):
 
         attention_mask = lang_mask
 
@@ -470,14 +472,14 @@ class VLNBert(BertPreTrainedModel):
 
             lang_output = text_embeds
             visn_output = img_embedding_output
-            if trar_masks is not None:
-                trar_mask, grid_mask = trar_masks
+            # if trar_masks is not None:
+            #     trar_mask, grid_mask = trar_masks
 
             for tdx, layer_module in enumerate(self.addlayer):
-                if args.trar_mask:
-                    alphas = self.routing_block(visn_output, tau=None, masks=None)
-                    img_mask = torch.sum(trar_mask * alphas.unsqueeze(-1).unsqueeze(-1), 1) * grid_mask
-                    img_mask = img_mask.unsqueeze(1)
+                # if args.trar_mask:
+                #     alphas = self.routing_block(visn_output, tau=None, masks=None)
+                #     img_mask = torch.sum(trar_mask * alphas.unsqueeze(-1).unsqueeze(-1), 1) * grid_mask
+                #     img_mask = img_mask.unsqueeze(1)
                 lang_output, visn_output, language_attention_scores, visual_attention_scores = layer_module(lang_output,
                                                                                                             text_mask,
                                                                                                             visn_output,

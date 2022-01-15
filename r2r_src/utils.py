@@ -529,8 +529,8 @@ def length2mask(length, size=None):
 
 
 def point_mask(x, h_span=3, v_span=3):
-    # h: horizontal span: 1~12
-    # v: vertical span 1~4
+    # h_span: horizontal span: 1~12
+    # v_span: vertical span 1~4
     h = h_span // 2
     v = v_span // 2
     return list(
@@ -544,11 +544,10 @@ def point_mask(x, h_span=3, v_span=3):
 POINT_MASKS = [point_mask(pid, h_span=args.slot_local_mask_h, v_span=args.slot_local_mask_v) for pid in range(36)]
 
 
-def localmask(pointIds, query_len, ctx_len=None, h_span=3, v_span=3):
+def localmask(pointIds, query_len, ctx_len=None):
     batch_size = len(pointIds)
     if ctx_len is None:
         ctx_len = query_len
-
     mask = torch.cat([
         torch.cat([torch.ones((1, len(pid))), torch.zeros((1, query_len - len(pid)))], 1) for pid in pointIds
     ], 0).unsqueeze(-1).repeat(1, 1, ctx_len).bool().cuda()
@@ -557,6 +556,19 @@ def localmask(pointIds, query_len, ctx_len=None, h_span=3, v_span=3):
             mask[i][j][POINT_MASKS[pointIds[i][j]]] = False
 
     return mask
+
+LOCAL_MASKS = torch.stack([localmask([[pid]], query_len=1, ctx_len=36).squeeze() for pid in range(36)], 1)
+
+def cand_mask(pointIds, h_span=3, v_span=3):
+    bs = len(pointIds)
+    query_len = max([len(pid) for pid in pointIds]) + 1
+    masks = torch.zeros(bs, query_len, query_len)
+    local_masks = torch.stack([localmask([[pid]], query_len=1, ctx_len=36, h_span=h_span, v_span=v_span).squeeze() for pid in range(36)], 1)
+    for batch_id, pids in enumerate(pointIds):
+        for query_id, cid in enumerate(pids):
+            masks[batch_id][query_id][:len(pids)] = local_masks[cid][pids]
+
+    return masks
 
 
 def average_length(path2inst):
