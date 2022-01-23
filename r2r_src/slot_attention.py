@@ -14,6 +14,11 @@ class SlotAttention(nn.Module):
         self.scale = dim ** -0.5
         self.feature_size = feature_size
 
+        # self.slots_mu = nn.Parameter(torch.randn(1, 1, dim))
+        #
+        # self.slots_logsigma = nn.Parameter(torch.zeros(1, 1, dim))
+        # init.xavier_uniform_(self.slots_logsigma)
+
         self.to_q = nn.Linear(dim, dim)
         if args.slot_share_qk:
             self.to_k = self.to_q
@@ -57,10 +62,13 @@ class SlotAttention(nn.Module):
         for t in range(self.iters):
             slots_prev = slots
 
-            slots[..., : -args.angle_feat_size] = self.norm_slots(slots[..., : -args.angle_feat_size].clone())
+            # slots[..., : -args.angle_feat_size] = self.norm_slots(slots[..., : -args.angle_feat_size])
 
             # (bs, num_slots, hidden_size)
-            q = self.to_q(slots.clone())
+            q = self.to_q(torch.cat([
+                self.norm_slots(slots.clone()[..., : -args.angle_feat_size]),
+                slots[..., -args.angle_feat_size :]
+            ], -1))
 
             # (bs, num_slots, num_ctx)
             dots = torch.einsum('bid,bjd->bij', q, k) * self.scale

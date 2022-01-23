@@ -492,8 +492,8 @@ class Seq2SeqAgent(BaseAgent):
                 sub_h_t, lang_feats, token_embeds = self.vln_bert(**language_inputs)
                 h_t.append(sub_h_t[0])
                 sub_language_features.append(lang_feats)
-            h_t = torch.stack(h_t)
-            language_features = torch.stack([s[0] for s in sub_language_features])
+            h_t = torch.stack(h_t).cuda()
+            language_features = torch.stack([s[0] for s in sub_language_features]).cuda()
             language_attention_mask = torch.stack([torch.tensor(m[0]) for m in sub_lang_masks]).cuda()
             sub_instr_left = np.array([len(s) for s in seq_lengths]) - 1
 
