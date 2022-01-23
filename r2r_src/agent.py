@@ -32,6 +32,17 @@ from adversarial import Discriminator
 
 # import trar
 
+class SubInstrShift(nn.Module):
+    def __init__(self):
+        super(SubInstrShift, self).__init__()
+        self.sublen_proj = nn.Linear(args.max_subs, 256)
+        self.shift_proj = nn.Linear(1024, 1)
+
+    def forward(self, state, sub_len):
+        sub_instr_left_onehot = torch.eye(args.batchSize, args.max_subs)[sub_len].cuda()
+        sub_len_info = self.sublen_proj(sub_instr_left_onehot)
+        shift_prob = self.shift_proj(torch.cat([state, sub_len_info], -1))
+        return shift_prob
 
 class BaseAgent(object):
     ''' Base class for an R2R agent to generate and save trajectories. '''
@@ -120,6 +131,13 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr, weight_decay=args.weight_decay)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
 
+        if args.sub_instr is not None:
+            self.sub_instr_shifter = SubInstrShift().cuda()
+            self.sub_instr_shifter_optimizer = args.optimizer(self.sub_instr_shifter.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+            self.models.append(self.sub_instr_shifter)
+            self.optimizers.append(self.sub_instr_shifter_optimizer)
+            self.sub_instr_shift_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
+
         if args.pg_weight is not None:
             self.pg_monitor = PGMonitor(args.batchSize, hidden_size=768).cuda()
             self.pg_monitor_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr * 10)
@@ -202,23 +220,35 @@ class Seq2SeqAgent(BaseAgent):
         self.logs = defaultdict(list)
 
     def _sort_batch(self, obs):
-        seq_tensor = np.array([ob['instr_encoding'] for ob in obs])
-        seq_lengths = np.argmax(seq_tensor == padding_idx, axis=1)
-        seq_lengths[seq_lengths == 0] = seq_tensor.shape[1]
+        if not args.sub_instr or self.env.name == 'aug':
+            seq_tensor = np.array([ob['instr_encoding'] for ob in obs])
+            seq_lengths = np.argmax(seq_tensor == padding_idx, axis=1)
+            seq_lengths[seq_lengths == 0] = seq_tensor.shape[1]
 
-        seq_tensor = torch.from_numpy(seq_tensor)
-        seq_lengths = torch.from_numpy(seq_lengths)
+            seq_tensor = torch.from_numpy(seq_tensor)
+            seq_lengths = torch.from_numpy(seq_lengths)
 
-        # Sort sequences by lengths
-        seq_lengths, perm_idx = seq_lengths.sort(0, True)  # True -> descending
-        sorted_tensor = seq_tensor[perm_idx]
-        mask = (sorted_tensor != padding_idx)
+            # Sort sequences by lengths
+            seq_lengths, perm_idx = seq_lengths.sort(0, True)  # True -> descending
+            sorted_tensor = seq_tensor[perm_idx]
+            mask = (sorted_tensor != padding_idx)
+            token_type_ids = torch.zeros_like(mask)
+            return Variable(sorted_tensor, requires_grad=False).long().cuda(), \
+                   mask.long().cuda(), token_type_ids.long().cuda(), \
+                   torch.tensor(list(seq_lengths)).cuda(), list(perm_idx)
+        else:
+            sub_seq_tensor = np.array([np.array(ob['sub_instr_encoding']) for ob in obs])
+            sub_seq_lengths = []
+            for sub in sub_seq_tensor:
+                sl = np.argmax(sub == padding_idx, axis=1)
+                sl[sl == 0] = sub.shape[1]
+                sub_seq_lengths.append(sl)
+            perm_idx = np.array([len(l) for l in sub_seq_lengths]).argsort()[::-1]
+            sorted_sub_tensor = sub_seq_tensor[perm_idx]
+            sub_seq_lengths = np.array(sub_seq_lengths)[perm_idx]
+            mask = [s != padding_idx for s in sorted_sub_tensor]
 
-        token_type_ids = torch.zeros_like(mask)
-
-        return Variable(sorted_tensor, requires_grad=False).long().cuda(), \
-               mask.long().cuda(), token_type_ids.long().cuda(), \
-               torch.tensor(list(seq_lengths)).cuda(), list(perm_idx)
+            return sorted_sub_tensor, mask, sub_seq_lengths, list(perm_idx)
 
     def _feature_variable(self, obs):
         ''' Extract precomputed features into variable. '''
@@ -433,20 +463,41 @@ class Seq2SeqAgent(BaseAgent):
         batch_size = len(obs)
 
         # Language input
-        sentence, language_attention_mask, token_type_ids, seq_lengths, perm_idx = self._sort_batch(obs)
+        if not args.sub_instr or self.env.name == 'aug':
+            sentence, language_attention_mask, token_type_ids, seq_lengths, perm_idx = self._sort_batch(obs)
+            ''' Language BERT '''
+            language_inputs = {'mode': 'language',
+                               'sentence': sentence,
+                               'attention_mask': language_attention_mask,
+                               'lang_mask': language_attention_mask,
+                               # 'token_type_ids': token_type_ids
+                               }
+            if args.vlnbert == 'oscar':
+                language_features = self.vln_bert(**language_inputs)
+            elif args.vlnbert == 'prevalent':
+                h_t, language_features, token_embeds = self.vln_bert(**language_inputs)
+        else:
+            sentence, sub_lang_masks, seq_lengths, perm_idx = self._sort_batch(obs)
+            h_t = []
+            sub_language_features = []
+            for s, m in zip(sentence, sub_lang_masks):
+                sub_sentence = torch.tensor(s).cuda()
+                lang_mask = torch.tensor(m).cuda()
+                language_inputs = {
+                    'mode': 'language',
+                    'sentence': sub_sentence,
+                    'attention_mask': lang_mask,
+                    'lang_mask': lang_mask
+                }
+                sub_h_t, lang_feats, token_embeds = self.vln_bert(**language_inputs)
+                h_t.append(sub_h_t[0])
+                sub_language_features.append(lang_feats)
+            h_t = torch.stack(h_t)
+            language_features = torch.stack([s[0] for s in sub_language_features])
+            language_attention_mask = torch.stack([torch.tensor(m[0]) for m in sub_lang_masks]).cuda()
+            sub_instr_left = np.array([len(s) for s in seq_lengths]) - 1
+
         perm_obs = obs[perm_idx]
-
-        ''' Language BERT '''
-        language_inputs = {'mode': 'language',
-                           'sentence': sentence,
-                           'attention_mask': language_attention_mask,
-                           'lang_mask': language_attention_mask,
-                           'token_type_ids': token_type_ids}
-        if args.vlnbert == 'oscar':
-            language_features = self.vln_bert(**language_inputs)
-        elif args.vlnbert == 'prevalent':
-            h_t, language_features, token_embeds = self.vln_bert(**language_inputs)
-
         # Record starting point
         traj = [{
             'instr_id': ob['instr_id'],
@@ -472,6 +523,7 @@ class Seq2SeqAgent(BaseAgent):
         masks = []
         entropys = []
         ml_loss = 0.
+        shift_loss = 0.
         if args.discriminator:
             discriminator_loss = 0.
 
@@ -572,7 +624,7 @@ class Seq2SeqAgent(BaseAgent):
                              'attention_mask': visual_attention_mask,
                              'lang_mask': language_attention_mask,
                              'vis_mask': visual_temp_mask,
-                             'token_type_ids': token_type_ids,
+                             # 'token_type_ids': token_type_ids,
                              'action_feats': input_a_t,
                              'cand_feats': candidate_feat,
                              'cand_mp_feats': candidate_mp_feat,
@@ -583,7 +635,6 @@ class Seq2SeqAgent(BaseAgent):
             h_t, logit, language_attn_probs = self.vln_bert(**visual_inputs)
             language_attn_probs = language_attn_probs.view(batch_size, -1)
             hidden_states.append(h_t)
-
 
             if args.visualize and self.env.name not in ['train', 'aug']:
                 for i, ob in enumerate(perm_obs):
@@ -631,6 +682,35 @@ class Seq2SeqAgent(BaseAgent):
             self.make_equiv_action(cpu_a_t, perm_obs, perm_idx, traj)
             obs = np.array(self.env._get_obs())
             perm_obs = obs[perm_idx]  # Perm the obs for the resu
+
+            # shift sub instructions
+            if self.env.name != 'aug' and args.sub_instr:
+                sub_shift_prob = self.sub_instr_shifter(h_t, sub_instr_left)
+                shift_target = torch.zeros(batch_size).cuda()
+                for i, p in enumerate(sub_shift_prob):
+                    if self.feedback == 'teacher':
+                        if ended[i]:
+                            continue
+                        if sub_instr_left[i] > 0:
+                            sub_instr_index = -sub_instr_left[i] - 1
+                        else:
+                            sub_instr_index = -1
+                        if t + 1 >= perm_obs[i]['chunk_view'][sub_instr_index][1]:
+                            if sub_instr_index != -1:
+                                language_features[i] = sub_language_features[i][sub_instr_index+1]
+                            sub_instr_left[i] = max(0, sub_instr_left[i] - 1)
+                            shift_target[i] = 1.
+                        else:
+                            shift_target[i] = 0.
+                    else:
+                        if p > 0.5:
+                            if sub_instr_left[i] > 0:
+                                sub_instr_index = -sub_instr_left[i] - 1
+                                language_features[i] = sub_language_features[i][sub_instr_index+1]
+                                sub_instr_left[i] = max(0, sub_instr_left[i] - 1)
+                if self.feedback == 'teacher':
+                    shift_target = torch.tensor(shift_target).cuda()
+                    shift_loss += self.sub_instr_shift_criterion(sub_shift_prob, shift_target.unsqueeze(1))[(1-ended).nonzero()].sum()
 
             if train_rl:
                 # Calculate the mask and reward
@@ -758,7 +838,7 @@ class Seq2SeqAgent(BaseAgent):
                              'attention_mask': visual_attention_mask,
                              'lang_mask': language_attention_mask,
                              'vis_mask': visual_temp_mask,
-                             'token_type_ids': token_type_ids,
+                             # 'token_type_ids': token_type_ids,
                              'action_feats': input_a_t,
                              # 'pano_feats':         f_t,
                              'cand_feats': candidate_feat,
@@ -810,6 +890,9 @@ class Seq2SeqAgent(BaseAgent):
         if train_ml is not None:
             self.loss += ml_loss * train_ml / batch_size
             self.logs['IL_loss'].append((ml_loss * train_ml / batch_size).item())
+            if args.sub_instr and self.env.name != 'aug':
+                self.loss += shift_loss / batch_size
+                self.logs['Shift_loss'].append((shift_loss / batch_size).item())
 
         if (train_ml or train_rl) and args.discriminator:
             self.D_loss += discriminator_loss
@@ -941,6 +1024,8 @@ class Seq2SeqAgent(BaseAgent):
             all_tuple.append(("pg_monitor", self.pg_monitor, self.pg_monitor_optimizer))
         if args.slot_attn:
             all_tuple.append(("slot_attention", self.slot_attention, self.slot_optimizer))
+        if args.sub_instr:
+            all_tuple.append(("sub_instr_shifter", self.sub_instr_shifter, self.sub_instr_shifter_optimizer))
         for param in all_tuple:
             create_state(*param)
         torch.save(states, path)
@@ -971,6 +1056,8 @@ class Seq2SeqAgent(BaseAgent):
             all_tuple.append(("pg_monitor", self.pg_monitor, self.pg_monitor_optimizer))
         if args.slot_attn:
             all_tuple.append(("slot_attention", self.slot_attention, self.slot_optimizer))
+        if args.sub_instr:
+            all_tuple.append(("sub_instr_shifter", self.sub_instr_shifter, self.sub_instr_shifter_optimizer))
         for param in all_tuple:
             recover_state(*param)
         return states['vln_bert']['epoch'] - 1

@@ -28,10 +28,13 @@ class Param:
         self.parser.add_argument("--slot_noise", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_residual", action="store_const", default=False, const=True)
         self.parser.add_argument("--slot_local_mask", action="store_const", default=False, const=True)
-        self.parser.add_argument("--slot_mean", action="store_const", default=False, const=True)
         self.parser.add_argument('--slot_local_mask_h', type=int, default=3, help='local mask horizontal span')
         self.parser.add_argument('--slot_local_mask_v', type=int, default=3, help='local mask vertical span')
         self.parser.add_argument("--discriminator", action="store_const", default=False, const=True)
+
+        # sub-instruction
+        self.parser.add_argument("--sub_instr", action="store_const", default=False, const=True)
+        self.parser.add_argument('--max_subs', type=int, default=16, help='max number of sub instructions')
 
         self.parser.add_argument("--trar_mask", action="store_const", default=False, const=True)
         self.parser.add_argument('--trar_pooling', type=str, default='attention')

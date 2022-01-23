@@ -79,8 +79,12 @@ def load_datasets(splits):
                 with open('data/R2R_test.json') as f:
                     new_data = json.load(f)
             else:
-                with open('data/R2R_%s.json' % split) as f:
-                    new_data = json.load(f)
+                if args.sub_instr:
+                    with open('data/FGR2R_%s.json' % split) as f:
+                        new_data = json.load(f)
+                else:
+                    with open('data/R2R_%s.json' % split) as f:
+                        new_data = json.load(f)
         else:
             print('\nLoading prevalent data for pretraining...')
             with open(split) as f:
@@ -98,9 +102,9 @@ def load_datasets(splits):
     return data
 
 
-def pad_instr_tokens(instr_tokens, maxlength=20):
+def pad_instr_tokens(instr_tokens, maxlength=20, minlength=2):
 
-    if len(instr_tokens) <= 2: #assert len(raw_instr_tokens) > 2
+    if len(instr_tokens) <= minlength: #assert len(raw_instr_tokens) > 2
         return None
 
     if len(instr_tokens) > maxlength - 2: # -2 for [CLS] and [SEP]

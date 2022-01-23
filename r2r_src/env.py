@@ -19,6 +19,7 @@ import os
 import random
 import networkx as nx
 from param import args
+import itertools
 
 from utils import load_datasets, load_nav_graphs, pad_instr_tokens
 
@@ -132,25 +133,47 @@ class R2RBatch():
                 else:
                     # Split multiple instructions into separate entries
                     for j, instr in enumerate(item['instructions']):
-                        try:
-                            new_item = dict(item)
-                            new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
-                            new_item['instructions'] = instr
+                        new_item = dict(item)
+                        new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
+                        new_item['instructions'] = instr
 
-                            if 'chunk_view' in item:
-                                new_item['chunk_view'] = item['chunk_view'][j]
-                                new_item['sub_instr_index'] = item['sub_instr_index'][j]
+                        ''' BERT tokenizer '''
+                        instr_tokens = tokenizer.tokenize(instr)
+                        padded_instr_tokens, num_words = pad_instr_tokens(instr_tokens, args.maxInput)
+                        new_item['instr_encoding'] = tokenizer.convert_tokens_to_ids(padded_instr_tokens)
 
-                            ''' BERT tokenizer '''
-                            instr_tokens = tokenizer.tokenize(instr)
-                            padded_instr_tokens, num_words = pad_instr_tokens(instr_tokens, args.maxInput)
-                            new_item['instr_encoding'] = tokenizer.convert_tokens_to_ids(padded_instr_tokens)
+                        if 'chunk_view' in item:
+                            if j >= 3:
+                                new_item['chunk_view'] = item['chunk_view'][-1]
+                                new_item['sub_instructions'] = [instr_tokens]
+                            else:
+                                chunk_view = item['chunk_view'][j]
+                                sub_instructions = eval(item['new_instructions'])[j]
+                                new_item['chunk_view'] = []
+                                new_item['sub_instructions'] = []
+                                chunk_start = 0
+                                chunk_end = 0
+                                # merge chunks with same start or end, like [1, 1], [1, 2] to [1, 2];
+                                # if chunk_view ends with same view indexes, like [5, 6], [6, 6], then merge backwards to [5, 6]
+                                while chunk_end < len(chunk_view):
+                                    if chunk_view[chunk_start][0] == chunk_view[chunk_end][1]:
+                                        chunk_end += 1
+                                    else:
+                                        new_item['chunk_view'].append([chunk_view[chunk_start][0], chunk_view[chunk_end][1]])
+                                        new_item['sub_instructions'].append(list(itertools.chain.from_iterable(sub_instructions[chunk_start:chunk_end+1])))
+                                        chunk_end += 1
+                                        chunk_start = chunk_end
+                                if chunk_start == chunk_end - 1:
+                                    new_item['sub_instructions'][-1] += sub_instructions[-1]
 
-                            if new_item['instr_encoding'] is not None:  # Filter the wrong data
-                                self.data.append(new_item)
-                                scans.append(item['scan'])
-                        except:
-                            continue
+                            new_item['sub_instr_encoding'] = []
+                            for sub_instr in new_item['sub_instructions']:
+                                padded_sub_instr_tokens, num_words_sub = pad_instr_tokens(sub_instr, args.maxInput, minlength=0)
+                                new_item['sub_instr_encoding'].append(tokenizer.convert_tokens_to_ids(padded_sub_instr_tokens))
+
+                        if new_item['instr_encoding'] is not None:  # Filter the wrong data
+                            self.data.append(new_item)
+                            scans.append(item['scan'])
 
         if name is None:
             self.name = splits[0] if len(splits) > 0 else "FAKE"
@@ -389,7 +412,8 @@ class R2RBatch():
                 obs[-1]['mp_feature'] = self.mp_feature['_'.join([state.scanId, state.location.viewpointId])]
             if 'chunk_view' in item:
                 obs[-1]['chunk_view'] = item['chunk_view']
-                obs[-1]['sub_instr_index'] = item['sub_instr_index']
+                obs[-1]['sub_instructions'] = item['sub_instructions']
+                obs[-1]['sub_instr_encoding'] = item['sub_instr_encoding']
 
             # A2C reward. The negative distance between the state and the final state
             obs[-1]['distance'] = self.distances[state.scanId][state.location.viewpointId][item['path'][-1]]

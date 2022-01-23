@@ -104,7 +104,7 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         critic_loss = sum(listner.logs['critic_loss']) / total
         RL_loss = sum(listner.logs['RL_loss']) / max(len(listner.logs['RL_loss']), 1)
         IL_loss = sum(listner.logs['IL_loss']) / max(len(listner.logs['IL_loss']), 1)
-        D_loss = sum(listner.logs['D_loss']) /  max(len(listner.logs['D_loss']), 1)
+        Shift_loss = sum(listner.logs['Shift_loss']) /  max(len(listner.logs['Shift_loss']), 1)
 
         entropy = sum(listner.logs['entropy']) / total
         lr = listner.logs['loss/lr'][-1]
@@ -113,7 +113,7 @@ def train(train_env, tok, n_iters, log_every=args.log_every, val_envs={}, aug_en
         writer.add_scalar("policy_entropy", entropy, idx)
         writer.add_scalar("loss/RL_loss", RL_loss, idx)
         writer.add_scalar("loss/IL_loss", IL_loss, idx)
-        writer.add_scalar("loss/D_loss", D_loss, idx)
+        writer.add_scalar("loss/Shift_loss", Shift_loss, idx)
 
         writer.add_scalar("total_actions", total, idx)
         writer.add_scalar("max_length", length, idx)
