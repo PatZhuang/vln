@@ -131,7 +131,7 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr, weight_decay=args.weight_decay)
         self.optimizers = [self.vln_bert_optimizer, self.critic_optimizer]
 
-        if args.sub_instr is not None:
+        if args.sub_instr:
             self.sub_instr_shifter = SubInstrShift().cuda()
             self.sub_instr_shifter_optimizer = args.optimizer(self.sub_instr_shifter.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             self.models.append(self.sub_instr_shifter)
