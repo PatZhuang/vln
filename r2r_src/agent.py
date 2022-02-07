@@ -138,13 +138,13 @@ class Seq2SeqAgent(BaseAgent):
             self.optimizers.append(self.sub_instr_shifter_optimizer)
             self.sub_instr_shift_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
 
-        if args.pg_weight is not None:
-            self.pg_monitor = PGMonitor(args.batchSize, hidden_size=768).cuda()
-            self.pg_monitor_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr * 10)
-            self.models.append(self.pg_monitor)
-            self.optimizers.append(self.pg_monitor_optimizer)
-
-            self.pg_criterion = nn.BCELoss(reduction='sum')
+        # if args.pg_weight is not None:
+        #     self.pg_monitor = PGMonitor(args.batchSize, hidden_size=768).cuda()
+        #     self.pg_monitor_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr * 10)
+        #     self.models.append(self.pg_monitor)
+        #     self.optimizers.append(self.pg_monitor_optimizer)
+        #
+        #     self.pg_criterion = nn.BCELoss(reduction='sum')
 
         if args.clip_weight is not None:
             if args.clip_after_encoder:
@@ -212,7 +212,7 @@ class Seq2SeqAgent(BaseAgent):
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
 
-        self.progress_criterion = nn.L1Loss(reduction='sum')
+        self.progress_criterion = nn.MSELoss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
 
         # Logs
@@ -537,6 +537,11 @@ class Seq2SeqAgent(BaseAgent):
                     'candidate_view_id': []
                 }
 
+        if args.pg_weight is not None:
+            traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
+            instr_index = torch.arange(args.maxInput - 1).cuda()
+            pg_loss = 0.
+
         for t in range(self.episode_len):
             input_feat = self.get_input_feat(perm_obs)
             input_a_t = input_feat['input_a_t']
@@ -645,6 +650,52 @@ class Seq2SeqAgent(BaseAgent):
 
             # Here the logit is [b, max_candidate]
             logit.masked_fill_(candidate_mask, -float('inf'))
+
+            if self.feedback == 'teacher' and args.pg_weight is not None:
+                progress_pred = torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)
+                if t == 0:
+                    last_progress_pred = progress_pred
+                    last_progress_gt = torch.zeros_like(progress_pred)
+                    traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
+                    pg_loss += self.progress_criterion(progress_pred, last_progress_gt) * 10
+                else:
+                    traj_progress = torch.tensor([
+                        self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
+                        for ob in perm_obs
+                    ]).cuda()
+                    progress_gt = 1 - traj_progress / traj_length
+                    pg_loss += self.progress_criterion((progress_pred - last_progress_pred)*100,(progress_gt - last_progress_gt)*100)
+                    last_progress_pred = progress_pred
+                    last_progress_gt = progress_gt
+                # force language_attn_probs to be similar to one-hot
+                # attn_loss = 1 - torch.sum(language_attn_probs ** 2, 1)
+                # attn_loss.masked_fill_(attn_loss <= 0.5, 0)
+                # ap_loss += torch.sum(attn_loss)
+
+            if args.object:
+                candidate_pos = input_feat['cand_pos']
+                object_feat = input_feat['obj_feat']
+                object_bbox = input_feat['obj_bbox']
+
+                # mimic straight through gumbel-softmaxsc
+                hard_idx = language_attn_probs.max(-1, keepdim=True)[1]
+                hard_prob = torch.zeros_like(language_attn_probs).scatter_(-1, hard_idx, 1.0)
+                language_attn_probs_hard = hard_prob - language_attn_probs.detach() + language_attn_probs
+                sampled_instr = torch.sum((token_embeds * language_attn_probs_hard.unsqueeze(-1)), 1).unsqueeze(1)
+
+                '''Object BERT'''
+                object_inputs = {
+                    'mode': 'object',
+                    'sentence': sampled_instr,
+                    'obj_feat': object_feat,
+                    'obj_bbox': object_bbox,
+                    'cand_pos': candidate_pos,
+                    'cand_mask': candidate_mask,
+                    'lang_mask': language_attention_mask
+                }
+
+                obj_instr_match_score = self.vln_bert(**object_inputs)
+                logit = (logit + obj_instr_match_score) / 2
 
             # Supervised training
             target = self._teacher_action(perm_obs, ended)
@@ -890,9 +941,10 @@ class Seq2SeqAgent(BaseAgent):
         if train_ml is not None:
             self.loss += ml_loss * train_ml / batch_size
             self.logs['IL_loss'].append((ml_loss * train_ml / batch_size).item())
-            if args.sub_instr and self.env.name != 'aug':
-                self.loss += shift_loss / batch_size
-                self.logs['Shift_loss'].append((shift_loss / batch_size).item())
+
+            if args.pg_weight is not None:
+                self.loss += pg_loss * args.pg_weight / batch_size
+                self.logs['PG_loss'].append((pg_loss * args.pg_weight / batch_size).item())
 
         if (train_ml or train_rl) and args.discriminator:
             self.D_loss += discriminator_loss

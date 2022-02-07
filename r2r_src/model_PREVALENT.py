@@ -87,8 +87,8 @@ class VLNBERT(nn.Module):
             state_with_action = self.action_LayerNorm(state_with_action)
             state_feats = torch.cat((state_with_action.unsqueeze(1), sentence[:, 1:, :]), dim=1)
 
-            # if cand_mp_feats is not None:
-            #     cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha * cand_mp_feats
+            if cand_mp_feats is not None:
+                cand_feats[..., :-args.angle_feat_size] += self.feat_cat_alpha * cand_mp_feats
             cand_feats[..., :-args.angle_feat_size] = self.drop_env(cand_feats[..., :-args.angle_feat_size])
             # logit is the attention scores over the candidate features
             h_t, logit, attended_language, attended_visual, language_attn_probs = self.vln_bert(mode, state_feats,
@@ -106,7 +106,20 @@ class VLNBERT(nn.Module):
             state_proj = self.state_LayerNorm(state_proj)
 
             return state_proj, logit, language_attn_probs
+        elif mode == 'object':
+            match_score = self.vln_bert(mode, sentence, lang_mask=lang_mask, obj_feat=obj_feat.long(),
+                                        obj_pos_encoding=None)
 
+            if args.match_type == 'max':
+                match_score = match_score.max(-1).values
+                match_score.masked_fill_(cand_mask, -float('inf'))
+            elif args.match_type == 'mean':
+                match_score = match_score.mean(-1)
+                match_score.masked_fill_(cand_mask, -float('inf'))
+
+            # match_score = nn.functional.softmax(match_score)
+            # assert not torch.isnan(match_score).any()
+            return match_score
         else:
             raise ModuleNotFoundError
 

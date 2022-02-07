@@ -286,8 +286,8 @@ class BertOutAttention(nn.Module):
 
         if args.xdyt:
             # dynamic temperature
-            dy_t = self.temp_act(self.temp_fc(query_layer))
-            attention_scores = attention_scores * dy_t
+            dy_t = self.temp_act(self.temp_fc(key_layer))
+            attention_scores = attention_scores * dy_t.transpose(-1, -2)
 
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         if attention_mask is not None:
