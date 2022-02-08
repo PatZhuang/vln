@@ -212,7 +212,7 @@ class Seq2SeqAgent(BaseAgent):
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
 
-        self.progress_criterion = nn.MSELoss(reduction='sum')
+        self.progress_criterion = nn.L1Loss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
 
         # Logs
@@ -664,7 +664,15 @@ class Seq2SeqAgent(BaseAgent):
                         for ob in perm_obs
                     ]).cuda()
                     progress_gt = 1 - traj_progress / traj_length
-                    pg_loss += self.progress_criterion((progress_pred - last_progress_pred)*100,(progress_gt - last_progress_gt)*100)
+                    # pg_loss += self.progress_criterion((progress_pred - last_progress_pred),
+                    #                                    (progress_gt - last_progress_gt))
+                    criterion = self.progress_criterion(progress_pred, progress_gt)
+                    if criterion < 0.15:
+                        pg_loss += torch.tensor(0.).cuda()
+                    else:
+                        pg_loss += criterion
+
+                    # pg_loss += self.progress_criterion(progress_pred, progress_gt)
                     last_progress_pred = progress_pred
                     last_progress_gt = progress_gt
                 # force language_attn_probs to be similar to one-hot
