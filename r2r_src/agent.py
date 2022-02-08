@@ -212,7 +212,7 @@ class Seq2SeqAgent(BaseAgent):
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
 
-        self.progress_criterion = nn.L1Loss(reduction='sum')
+        self.progress_criterion = nn.L1Loss(reduction='none')
         self.ndtw_criterion = utils.ndtw_initialize()
 
         # Logs
@@ -652,12 +652,13 @@ class Seq2SeqAgent(BaseAgent):
             logit.masked_fill_(candidate_mask, -float('inf'))
 
             if self.feedback == 'teacher' and args.pg_weight is not None:
-                progress_pred = torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)
+                progress_pred = (torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)).view(batch_size, 1)
                 if t == 0:
-                    last_progress_pred = progress_pred
-                    last_progress_gt = torch.zeros_like(progress_pred)
+                    # last_progress_pred = progress_pred
+                    # last_progress_gt = torch.zeros_like(progress_pred)
                     traj_length = torch.tensor([ob['distance'] for ob in perm_obs]).cuda()
-                    pg_loss += self.progress_criterion(progress_pred, last_progress_gt) * 10
+                    progress_gt = torch.zeros((batch_size, 1)).cuda()
+                    # pg_loss += self.progress_criterion(progress_pred, last_progress_gt)
                 else:
                     traj_progress = torch.tensor([
                         self.env.distances[ob['scan']][ob['viewpoint']][ob['gt_path'][-1]]
@@ -666,15 +667,13 @@ class Seq2SeqAgent(BaseAgent):
                     progress_gt = 1 - traj_progress / traj_length
                     # pg_loss += self.progress_criterion((progress_pred - last_progress_pred),
                     #                                    (progress_gt - last_progress_gt))
-                    criterion = self.progress_criterion(progress_pred, progress_gt)
-                    if criterion < 0.15:
-                        pg_loss += torch.tensor(0.).cuda()
-                    else:
-                        pg_loss += criterion
+                criterion = self.progress_criterion(progress_pred, progress_gt)
+                criterion[criterion < 0.15] = 0.
+                pg_loss += torch.sum(criterion)
 
                     # pg_loss += self.progress_criterion(progress_pred, progress_gt)
-                    last_progress_pred = progress_pred
-                    last_progress_gt = progress_gt
+                    # last_progress_pred = progress_pred
+                    # last_progress_gt = progress_gt
                 # force language_attn_probs to be similar to one-hot
                 # attn_loss = 1 - torch.sum(language_attn_probs ** 2, 1)
                 # attn_loss.masked_fill_(attn_loss <= 0.5, 0)
