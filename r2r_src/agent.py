@@ -212,7 +212,7 @@ class Seq2SeqAgent(BaseAgent):
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
 
-        self.progress_criterion = nn.L1Loss(reduction='none')
+        self.progress_criterion = nn.L1Loss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
 
         # Logs
@@ -667,9 +667,7 @@ class Seq2SeqAgent(BaseAgent):
                     progress_gt = 1 - traj_progress / traj_length
                     # pg_loss += self.progress_criterion((progress_pred - last_progress_pred),
                     #                                    (progress_gt - last_progress_gt))
-                criterion = self.progress_criterion(progress_pred, progress_gt)
-                criterion[criterion < 0.15] = 0.
-                pg_loss += torch.sum(criterion)
+                pg_loss += self.progress_criterion(progress_pred, progress_gt)
 
                     # pg_loss += self.progress_criterion(progress_pred, progress_gt)
                     # last_progress_pred = progress_pred
