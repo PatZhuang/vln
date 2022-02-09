@@ -138,13 +138,13 @@ class Seq2SeqAgent(BaseAgent):
             self.optimizers.append(self.sub_instr_shifter_optimizer)
             self.sub_instr_shift_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
 
-        # if args.pg_weight is not None:
-        #     self.pg_monitor = PGMonitor(args.batchSize, hidden_size=768).cuda()
-        #     self.pg_monitor_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr * 10)
-        #     self.models.append(self.pg_monitor)
-        #     self.optimizers.append(self.pg_monitor_optimizer)
-        #
-        #     self.pg_criterion = nn.BCELoss(reduction='sum')
+        if args.pg_weight is not None:
+            self.pg_monitor = PGMonitor(args.batchSize, hidden_size=768).cuda()
+            self.pg_monitor_optimizer = args.optimizer(self.pg_monitor.parameters(), lr=args.lr)
+            self.models.append(self.pg_monitor)
+            self.optimizers.append(self.pg_monitor_optimizer)
+
+            self.pg_criterion = nn.L1Loss(reduction='sum')
 
         if args.clip_weight is not None:
             if args.clip_after_encoder:
@@ -212,7 +212,7 @@ class Seq2SeqAgent(BaseAgent):
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, reduction='sum')
 
-        self.progress_criterion = nn.L1Loss(reduction='sum')
+        # self.progress_criterion = nn.L1Loss(reduction='sum')
         self.ndtw_criterion = utils.ndtw_initialize()
 
         # Logs
@@ -652,7 +652,8 @@ class Seq2SeqAgent(BaseAgent):
             logit.masked_fill_(candidate_mask, -float('inf'))
 
             if self.feedback == 'teacher' and args.pg_weight is not None:
-                progress_pred = (torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)).view(batch_size, 1)
+                # progress_pred = (torch.sum(language_attn_probs * instr_index, 1) / (torch.tensor(seq_lengths).cuda() - 1)).view(batch_size, 1)
+                progress_pred = self.pg_monitor(language_attn_probs)
                 if t == 0:
                     # last_progress_pred = progress_pred
                     # last_progress_gt = torch.zeros_like(progress_pred)
@@ -667,7 +668,7 @@ class Seq2SeqAgent(BaseAgent):
                     progress_gt = 1 - traj_progress / traj_length
                     # pg_loss += self.progress_criterion((progress_pred - last_progress_pred),
                     #                                    (progress_gt - last_progress_gt))
-                pg_loss += self.progress_criterion(progress_pred, progress_gt)
+                pg_loss += self.pg_criterion(progress_pred, progress_gt)
 
                     # pg_loss += self.progress_criterion(progress_pred, progress_gt)
                     # last_progress_pred = progress_pred
